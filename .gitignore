@@ -1,0 +1,14 @@
+# Python smeti
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+
+# Tvoji privatni ključi (NAJPOMEMBNEJE!)
+.env
+config.py
+
+# Baza podatkov
+*.db
+*.log

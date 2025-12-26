@@ -1,0 +1,586 @@
+import telegram
+import telegram.ext
+from database import Database
+import sqlite3
+import asyncio
+from datetime import datetime, timedelta
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+DB_PATH = os.getenv("DB_PATH")
+# Povezava z bazo
+db = Database(DB_PATH)
+
+
+
+
+async def start_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    
+    # Poskusimo registrirati uporabnika
+    is_new = db.register_user(user.id, user.first_name)
+
+    if is_new:
+        # Sporočilo za novega uporabnika s Trial paketom
+        msg = (
+            f"Pozdravljen, <b>{user.first_name}</b>! 👋\n\n"
+            "Sem tvoj osebni Avto.net obveščevalec. Ker si nov, sem ti pravkar "
+            "avtomatsko aktiviral <b>3-dnevni BREZPLAČNI PREIZKUS (TRIAL)</b>! 🎉\n\n"
+            "<b>Tvoj testni paket vključuje:</b>\n"
+            "• 1 URL za sledenje\n"
+            "• Osveževanje na 15 minut\n\n"
+            "Da začneš, mi pošlji URL z ukazom <code>/add_url</code> ali poglej navodila na /help."
+        )
+        # Logiranje za admina
+        db.log_user_activity(user.id, "/start", "Nov uporabnik - Trial aktiviran")
+    else:
+        # Sporočilo za obstoječega uporabnika
+        msg = (
+            f"Pozdravljen nazaj, <b>{user.first_name}</b>! 👋\n\n"
+            "Tvoj profil je že aktiven. Za pregled tvojih iskanj uporabi /list, "
+            "za več informacij o paketu pa /info."
+        )
+        db.log_user_activity(user.id, "/start", "Povratek starega uporabnika")
+
+    await update.message.reply_text(msg, parse_mode="HTML")
+
+
+async def add_url_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    from scraper import Scraper
+    
+    if not context.args:
+        await update.message.reply_text("❌ Manjka URL!")
+        return
+
+    url = context.args[0]
+    t_id = update.effective_user.id
+    
+    user_info = db.get_user_subscription_info(t_id)
+    if not user_info:
+        await update.message.reply_text("❌ Profil ni najden. Uporabi /start.")
+        return
+
+    if user_info['current_url_count'] >= user_info['max_urls']:
+        await update.message.reply_text(f"🚫 Limit dosežen ({user_info['max_urls']} URL)!")
+        return
+
+    # 1. Dodajanje v bazo in pridobitev novega URL ID-ja
+    status, new_url_id = db.add_search_url(t_id, url)
+
+    if status == "exists":
+        await update.message.reply_text("ℹ️ Temu URL-ju že slediš.")
+        return
+    elif status is True:
+        sync_msg = await update.message.reply_text("⏳ Povezujem se z Avto.net in sinhroniziram oglase...")
+        
+        try:
+            # 2. Pokličemo scraper.run() v ločeni niti
+            # To bo sprožilo "is_first_scan" logiko v scraper.py
+            temp_scraper = Scraper(db)
+            pending_data = [{'url_id': new_url_id, 'url': url}]
+            
+            # Izvedemo sken (to bo naredilo Silent Sync)
+            await asyncio.to_thread(temp_scraper.run, pending_data)
+            
+            await sync_msg.edit_text(
+                "✅ <b>Iskanje dodano in sinhronizirano!</b>\n\n"
+                "Sistem si je zapomnil trenutne oglase. Obvestilo boš prejel le za <b>nove</b> objave, ki se bodo pojavile od zdaj naprej! 🚀",
+                parse_mode="HTML"
+            )
+            db.log_user_activity(t_id, "/add_url", f"Uspešen dodaj in sync URL ID: {new_url_id}")
+            
+        except Exception as e:
+            print(f"Napaka pri syncu: {e}")
+            await sync_msg.edit_text("✅ Iskanje dodano! (Sinhronizacija bo opravljena ob naslednjem rednem skenu).")
+    else:
+        await update.message.reply_text("❌ Napaka pri vpisu v bazo.")
+
+
+
+async def remove_url_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("❌ Prosim navedi ID iskanja. Primer: `/remove_url 5`", parse_mode="Markdown")
+        return
+
+    input_id = context.args[0]
+    
+    # Preverimo, če je vpisana številka
+    if not input_id.isdigit():
+        await update.message.reply_text("⚠️ ID mora biti številka!")
+        return
+
+    t_id = update.effective_user.id
+    
+    # Uporabimo tvojo obstoječo funkcijo
+    if db.remove_subscription_by_id(t_id, int(input_id)):
+        # --- LOGGING USPEHA ---
+        db.log_user_activity(t_id, "/remove_url", f"Uspešno izbrisal ID: {input_id}")
+        # ----------------------
+        await update.message.reply_text(f"🗑️ Iskanje z ID `{input_id}` je bilo uspešno odstranjeno.", parse_mode="Markdown")
+    else:
+        # --- LOGGING NAPAKE (Če ID ne obstaja ali ni pravi) ---
+        db.log_user_activity(t_id, "/remove_url", f"Neuspešen izbris (ID {input_id} ne obstaja)")
+        # ----------------------
+        await update.message.reply_text("❓ Iskanja s tem ID-jem nismo našli na tvojem seznamu.")
+
+
+async def list_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    
+    # 1. Pridobimo URL-je
+    urls = db.get_user_urls(user_id)
+    
+    # 2. Pridobimo info o naročnini (da vemo max_urls)
+    user_info = db.get_user_subscription_info(user_id)
+
+    # --- LOGGING ---
+    db.log_user_activity(user_id, "/list", f"Pregled seznama ({len(urls)} aktivnih)")
+
+    if not urls:
+        msg = "Trenutno nimaš shranjenih iskanj. Dodaj jih z `/add_url`."
+        if user_info:
+            msg += f"\n\n📊 **Zasedenost:** `0 / {user_info['max_urls']}` mest"
+        await update.message.reply_text(msg, parse_mode="Markdown")
+        return
+
+    msg = "📋 **Tvoja shranjena iskanja:**\n\n"
+    for u in urls:
+        # Pripravimo krajši URL za izpis
+        display_url = u['url']
+        if len(display_url) > 45:
+            display_url = display_url[:42] + "..."
+            
+        msg += f"🆔 **ID: {u['url_id']}** - [Odpri iskanje na Avto.net]({u['url']})\n"
+
+    # 3. DODATEK: Izpis zasedenosti
+    if user_info:
+        msg += f"\n📊 **Zasedenost:** `{len(urls)} / {user_info['max_urls']}` mest\n"
+        msg += f"📦 **Paket:** `{user_info['subscription_type']}`"
+
+    msg += "\n\nZa izbris uporabi: `/remove_url <ID>`"
+    
+    await update.message.reply_text(msg, parse_mode="Markdown", disable_web_page_preview=True)
+
+
+async def info_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    
+    # Pridobimo vse podatke iz posodobljene get_user funkcije
+    user_data = db.get_user(user_id)
+    
+    # Pridobimo statistiko (poskrbi, da ta funkcija v DB uporablja 'start of day' ali '-1 day')
+    pregledi_24h = db.get_user_stats_24h(user_id)
+    
+    if not user_data:
+        await update.message.reply_text("Nisi registriran. Uporabi /start.")
+        return
+
+    # Dinamična barva/status glede na aktivnost
+    status_icon = "🟢" if user_data['is_active'] else "🔴"
+
+    msg = (
+        "ℹ️ <b>INFORMACIJE O PROFILU</b>\n\n"
+        f"👤 <b>Uporabnik:</b> <code>{user_id}</code>\n"
+        f"📦 <b>Paket:</b> <code>{user_data['subscription_type']}</code>\n"
+        f"✅ <b>Status:</b> {status_icon} {'Aktiven' if user_data['is_active'] else 'Neaktiven'}\n"
+        f"⏳ <b>Veljavnost do:</b> <code>{user_data['subscription_end']}</code>\n\n"
+        f"📊 <b>MOJI LIMITI:</b>\n"
+        f"• URL Limit: <code>{user_data['max_urls']}</code> iskanj\n"
+        f"• Interval: <code>{user_data['scan_interval']} min</code>\n\n"
+        f"----------------------------------\n"
+        f"🔍 <b>Skeniranj zate (24h):</b> <code>{pregledi_24h}</code>\n"
+        f"----------------------------------\n"
+        "<i>Številka zgoraj prikazuje, kolikokrat smo zate danes obiskali Avto.net.</i>"
+    )
+    
+    db.log_user_activity(user_id, "/info", "Pregled profila")
+    
+    await update.message.reply_text(msg, parse_mode="HTML")
+
+
+
+
+async def help_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    """Navodila za uporabo bota."""
+    msg = (
+        "📖 **NAVODILA ZA UPORABO**\n\n"
+        "1️⃣ **Pripravi iskanje:**\n"
+        "Pojdi na Avto.net, nastavi filtre (znamka, cena, letnik...) in klikni 'Išči'.\n\n"
+        "2️⃣ **Kopiraj URL:**\n"
+        "Kopiraj celoten naslov (URL) iz brskalnika.\n\n"
+        "3️⃣ **Dodaj v bota:**\n"
+        "Vpiši: `/add_url <tvoj_link>`\n\n"
+        "🚀 **In to je to!** Bot te bo obvestil takoj, ko se pojavi nov oglas.\n\n"
+        "**SEZNAM UKAZOV:**\n"
+        "• `/list` - Pregled tvojih iskanj\n"
+        "• `/remove_url <ID>` - Izbris iskanja\n"
+        "• `/info` - Status tvojega profila\n"
+        "• `/packages` - Pregled paketov"
+    )
+
+    await update.message.reply_text(msg, parse_mode="Markdown", disable_web_page_preview=True)
+
+async def packages_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    from config import SUBSCRIPTION_PACKAGES
+    user_id = update.effective_user.id
+    
+    msg = "<b>📦 RAZPOLOŽLJIVI PAKETI</b>\n\n"
+    
+    for code, pkg in SUBSCRIPTION_PACKAGES.items():
+        if code == "CUSTOM": continue 
+        
+        # Izbira emojija glede na paket
+        emoji = "🆓"
+        if code == "BASIC": emoji = "🚗"
+        if code == "PRO": emoji = "🔥"
+        if code == "ULTRA": emoji = "⚡"
+        if code == "VIP": emoji = "💎"
+        
+        # Poseben izpis za VIP, ki nima fiksnih številk
+        if code == "VIP":
+            msg += (
+                f"{emoji} <b>{pkg['label']} ({code})</b>\n"
+                f"• Število URL-jev: <b>{pkg['urls']}</b>\n"
+                f"• Interval osveževanja: <b>{pkg['interval']}</b>\n"
+                f"• Cena: <b>{pkg['price']}</b>\n\n"
+            )
+        else:
+            msg += (
+                f"{emoji} <b>{pkg['label']} ({code})</b>\n"
+                f"• Število URL-jev: <code>{pkg['urls']}</code>\n"
+                f"• Interval osveževanja: <code>{pkg['interval']} min</code>\n"
+                f"• Cena: <b>{pkg['price']}€ / mesec</b>\n\n"
+            )
+    
+    msg += "----------------------------------\n"
+    msg += f"🆔 <b>Tvoj ID za aktivacijo:</b> <code>{user_id}</code>\n"
+    msg += "<i>(Klikni na številko zgoraj, da jo kopiraš)</i>\n\n"
+    
+    # Tukaj vstavi svoj pravi link do Telegram profila
+    msg += '💳 <b>Za nakup piši adminu:</b> <a href="https://t.me/JanJu_123">Jan Jurhar</a>'
+    
+    await update.message.reply_text(msg, parse_mode="HTML", disable_web_page_preview=True)
+
+
+
+
+
+
+
+async def broadcast_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    from main import ADMIN_ID
+    if str(update.effective_user.id) != str(ADMIN_ID): return
+
+    if not context.args:
+        await update.message.reply_text("❌ Vpiši sporočilo: `/broadcast <tekst>`")
+        return
+
+    sporočilo = "📢 **OBVESTILO ADMINA**\n\n" + " ".join(context.args)
+    vsi_id = db.get_all_chat_ids()
+    
+    poslano = 0
+    for chat_id in vsi_id:
+        try:
+            await context.bot.send_message(chat_id=chat_id, text=sporočilo, parse_mode="Markdown")
+            poslano += 1
+            await asyncio.sleep(0.05) # Da ne blokiramo bota
+        except:
+            continue
+
+    await update.message.reply_text(f"✅ Sporočilo poslano {poslano} uporabnikom.")
+
+
+async def list_users_admin(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    from main import ADMIN_ID
+    if str(update.effective_user.id) != str(ADMIN_ID): 
+        return
+
+    users = db.get_all_users_admin()
+    if not users:
+        await update.message.reply_text("Baza je prazna.")
+        return
+
+    poročilo = "👥 **SEZNAM UPORABNIKOV**\n\n"
+    for u in users:
+        status_emoji = "💎" if u['is_active'] else "❌"
+        tip = u['subscription_type'] if u['subscription_type'] else "NONE"
+        poročilo += f"{status_emoji} `{u['telegram_id']}` - {u['telegram_name']}\nStatus: {tip} | Poteče: {u['subscription_end']}\n\n"
+
+    # Če je sporočilo predolgo, ga Telegram zavrne, zato ga pošljemo po delih če je treba
+    if len(poročilo) > 4096:
+        for x in range(0, len(poročilo), 4096):
+            await update.message.reply_text(poročilo[x:x+4096], parse_mode="Markdown")
+    else:
+        await update.message.reply_text(poročilo, parse_mode="Markdown")
+
+
+
+async def activate_user(update, context):
+    from main import ADMIN_ID, SUBSCRIPTION_PACKAGES
+    if str(update.effective_user.id) != str(ADMIN_ID): return
+
+    try:
+        # /activate <ID> <PAKET> <DNI> [neobvezno: <custom_urls> <custom_interval>]
+        args = context.args
+        user_id = args[0]
+        pkg_name = args[1].upper()
+        days = int(args[2])
+
+        if pkg_name == "CUSTOM":
+            max_urls = int(args[3])
+            interval = int(args[4])
+        elif pkg_name in SUBSCRIPTION_PACKAGES:
+            pkg = SUBSCRIPTION_PACKAGES[pkg_name]
+            max_urls = pkg['urls']
+            interval = pkg['interval']
+        else:
+            await update.message.reply_text("❌ Paket ne obstaja.")
+            return
+
+        expiry = (datetime.now() + timedelta(days=days)).strftime("%d.%m.%Y %H:%M:%S")
+        
+        # Shrani v bazo
+        db.update_user_subscription(user_id, pkg_name, max_urls, interval, expiry)
+
+        await update.message.reply_text(
+            f"🚀 *UPORABNIK NADGRAJEN*\n\n"
+            f"👤 ID: `{user_id}`\n"
+            f"📦 Paket: {pkg_name}\n"
+            f"🔗 Limit: {max_urls} URL / {interval} min\n"
+            f"📅 Velja do: {expiry}",
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        await update.message.reply_text("Uporaba: /activate <ID> <PAKET> <DNI>\nZa CUSTOM: /activate <ID> CUSTOM <DNI> <URLS> <MIN>")
+
+# 2. Ukaz za deaktivacijo: /deactivate <ID>
+async def deactivate_user(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    from main import ADMIN_ID
+    if str(update.effective_user.id) != str(ADMIN_ID):
+        return
+
+    try:
+        u_id = int(context.args[0])
+        db.update_user_status(u_id, sub_type=None)
+        
+        await update.message.reply_text(f"🚫 Uporabnik `{u_id}` je bil deaktiviran.")
+        await context.bot.send_message(chat_id=u_id, text="⚠️ Tvoja naročnina je potekla ali bila preklicana. Za podaljšanje kontaktiraj admina.")
+    except (IndexError, ValueError):
+        await update.message.reply_text("❌ Uporabi: `/deactivate ID`", parse_mode="Markdown")
+
+
+def get_todays_requests_count(self):
+    """Prešteje vse requeste v tabeli UserRequests za tekoči dan."""
+    conn = self.get_connection()
+    cursor = conn.cursor()
+    # Prešteje zapise, ki so se zgodili danes
+    cursor.execute("SELECT COUNT(*) FROM UserRequests WHERE date(timestamp) = date('now')")
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count
+
+async def admin_stats_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    from main import ADMIN_ID, DB_PATH
+    if str(update.effective_user.id) != str(ADMIN_ID): return
+    
+    db = Database(DB_PATH)
+    stats = db.get_admin_stats()
+
+    # NAMESTO cena_po_req = 0.002, vzamemo vrednosti direktno iz baze
+    # ki so bile izračunane: (bytes / 1024^3) * 5.0
+    strosek_danes = stats.get('cost_danes', 0)
+    strosek_mesec = stats.get('cost_mesec', 0)
+
+    msg = (
+        "📊 *ADMIN STATISTIKA*\n"
+        "______________________________\n\n"
+        "📅 *ZADNJIH 24 UR:*\n"
+        f"🌐 Requesti: `{stats['requesti_danes']}`\n"
+        f"💰 Realen strošek: `{strosek_danes:.2f}€`\n\n" # Povečal preciznost na 4 decimalke
+        "📈 *PORABA PO UPORABNIKIH (24h):*\n"
+    )
+
+    for row in stats.get('user_breakdown_day', []):
+        name = row['telegram_name'] if row['telegram_name'] else "Neznan"
+        msg += f"👤 {name}: `{row['cnt']}` req\n"
+
+    msg += (
+        "\n______________________________\n\n"
+        "🗓️ *TEKOČI MESEC:*\n"
+        f"👥 Uporabniki: `{stats['skupaj_uporabnikov']}`\n"
+        f"🔗 Aktivni URL-ji: `{stats['aktivni_urlji']}`\n"
+        f"🌐 Skupaj requestov: `{stats['requesti_mesec']}`\n"
+        f"💳 Ocenjen strošek: `{strosek_mesec:.2f}€`\n\n"
+        "🏆 *TOP PORABNIKI (Mesec):*\n"
+    )
+
+    for row in stats.get('user_breakdown_month', []):
+        name = row['telegram_name'] if row['telegram_name'] else "Neznan"
+        msg += f"👤 {name}: `{row['cnt']}` req\n"
+
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+
+async def health_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    from main import ADMIN_ID
+    if str(update.effective_user.id) != str(ADMIN_ID): return
+    
+    stats = db.get_admin_health_stats()
+    if not stats or stats['total_scans'] == 0:
+        await update.message.reply_text("Nekaj je narobe, v zadnjih 24h ni zapisov o skeniranju.")
+        return
+
+    mb_used = round((stats['total_bytes'] or 0) / (1024 * 1024), 2)
+    
+    msg = (
+        "📊 **SISTEMSKO ZDRAVJE (24h)**\n\n"
+        f"🔄 Skupaj skenov: `{stats['total_scans']}`\n"
+        f"⏱ Povprečni čas: `{round(stats['avg_time'], 2)}s`\n"
+        f"💾 Poraba podatkov: `{mb_used} MB`\n"
+        f"🚫 Število napak: `{stats['errors']}`\n"
+    )
+    
+    if stats['errors'] > 0:
+        msg += "\n⚠️ *Pozor: Scraper javlja napake. Preveri loge!*"
+        
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+async def check_user_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    from main import ADMIN_ID
+    if str(update.effective_user.id) != str(ADMIN_ID): return
+    if not context.args:
+        await update.message.reply_text("Uporaba: `/check_user <ID>`")
+        return
+        
+    target_id = context.args[0]
+    user, url_count, last_ads = db.get_user_diagnostic(target_id)
+    
+    if not user:
+        await update.message.reply_text("Uporabnika ne najdem v bazi.")
+        return
+
+    ads_info = "\n".join([f"• {a['sent_at']}" for a in last_ads]) if last_ads else "Ni še prejel oglasov."
+
+    msg = (
+        f"🔍 **DIAGNOZA: {user['telegram_name']}** ({target_id})\n\n"
+        f"💳 Paket: `{user['subscription_type']}`\n"
+        f"⏳ Poteče: `{user['subscription_end']}`\n"
+        f"🔗 Aktivni URL-ji: `{url_count} / {user['max_urls']}`\n"
+        f"⏱ Interval: `{user['scan_interval']} min`\n"
+        f"✅ Aktiven: {'DA' if user['is_active'] else 'NE'}\n\n"
+        f"📨 **Zadnjih 5 poslanih oglasov:**\n{ads_info}"
+    )
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+
+async def admin_help_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    from main import ADMIN_ID
+    if str(update.effective_user.id) != str(ADMIN_ID): return
+        
+    msg = (
+        "👑 **ADMIN KOMANDNI CENTER**\n\n"
+        "📊 **Sistem & Finance**\n"
+        "• `/health` - Status scraperja in poraba MB (24h)\n"
+        "• `/proxy_stats` - **Analiza stroškov in napoved**\n"
+        "• `/logs` - Zadnjih 5 tehničnih zapisov\n"
+        "• `/set_interval <sek>` - Spremeni hitrost bota\n\n"
+        
+        "👥 **Uporabniki**\n"
+        "• `/users` - Seznam vseh uporabnikov\n"
+        "• `/check_user <ID>` - Diagnoza (URL-ji, zadnji oglasi)\n"
+        "• `/activate <ID> <tip> <dni>` - Podaljšaj dostop\n"
+        "• `/deactivate <ID>` - Prekliči dostop\n\n"
+        
+        "📢 **Komunikacija**\n"
+        "• `/broadcast <tekst>` - Pošlji vsem obvestilo\n"
+        "• `/admin_stats` - Hitra statistika baze"
+    )
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+
+async def handle_message(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.lower()
+    if "živjo" in text or "hello" in text:
+        await update.message.reply_text("Živjo! Kako ti lahko pomagam?")
+    else:
+        await update.message.reply_text("Ne razumem tega ukaza. Poskusi z /info.")
+
+async def proxy_stats_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    from main import ADMIN_ID, PROXY_PRICE_GB
+    if str(update.effective_user.id) != str(ADMIN_ID): return
+
+    # Nastavi svojo ceno na GB (npr. 5€)
+
+    
+    stats = db.get_proxy_cost_analysis(PROXY_PRICE_GB)
+    
+    # Izračunamo še "Efficiency" (koliko KB na en najden oglas)
+    # To ti pove, če preveč skeniraš prazne URL-je
+    
+    msg = (
+        "💸 **FINANČNA ANALIZA PROXYJEV**\n\n"
+        f"💰 Cena: `{PROXY_PRICE_GB}€ / GB`\n"
+        "------------------\n"
+        f"📅 **Danes:**\n"
+        f"• Poraba: `{round(stats['daily_gb'] * 1024, 2)} MB`\n"
+        f"• Strošek: `{round(stats['daily_cost'], 4)}€`\n\n"
+        
+        f"📈 **Napoved (30 dni):**\n"
+        f"• Predviden promet: `{round(stats['avg_daily_gb'] * 30, 2)} GB`\n"
+        f"• Predviden strošek: `€{round(stats['monthly_projection'], 2)}`\n"
+        "------------------\n"
+    )
+    
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+async def admin_logs_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    from main import ADMIN_ID
+    if str(update.effective_user.id) != str(ADMIN_ID): 
+        return
+
+    # 1. Sistemski logi (zdaj UserActivity)
+    activities = db.get_recent_system_logs(5)
+    
+    msg = "📜 **ZADNJE AKTIVNOSTI:**\n"
+    for act in activities:
+        # Prilagojeno stolpcem: timestamp, command, details
+        msg += f"`{act['timestamp']}` | `{act['command']}`: {act['details']}\n"
+
+    # 2. Scraper logi (to že imaš in bi moralo delovati)
+    scrap_logs = db.get_scraper_health(5)
+    msg += "\n**SKENIRANJA:**\n"
+    for log in scrap_logs:
+        kb = round(log['bytes_used'] / 1024, 1) if log['bytes_used'] else 0
+        msg += f"ID:{log['url_id']} | {log['found_count']} oglasov | {kb}KB | {log['duration']}s\n"
+
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+async def error(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    print(f"Update {update} caused error {context.error}")
+
+
+
+def setup_bot(token):
+    app = telegram.ext.Application.builder().token(token).build()
+
+    # Ukazi
+    app.add_handler(telegram.ext.CommandHandler("start", start_command))
+    app.add_handler(telegram.ext.CommandHandler("list", list_command))
+    app.add_handler(telegram.ext.CommandHandler("add_url", add_url_command))
+    app.add_handler(telegram.ext.CommandHandler("remove_url", remove_url_command))
+    app.add_handler(telegram.ext.CommandHandler("info", info_command))
+
+    # Navadna sporočila
+    app.add_handler(telegram.ext.MessageHandler(telegram.ext.filters.TEXT & (~telegram.ext.filters.COMMAND), handle_message))
+
+    app.add_error_handler(error)
+    return app
+
+if __name__ == "__main__":
+    from main import TOKEN
+    print("Bot se zaganja...")
+    application = setup_bot(TOKEN)
+    application.run_polling()
