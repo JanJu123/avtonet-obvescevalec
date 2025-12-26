@@ -40,26 +40,37 @@ class DataManager():
         return [dict(row) for row in rows]
 
     def format_telegram_message(self, oglas):
-        # Varnostno očistimo vse vrednosti, da znaki ne zlomijo HTML-ja bota
+        # --- PAMETNO ČIŠČENJE ---
         ime = html.escape(str(oglas.get('ime_avta', 'Neznano')))
-        cena = html.escape(str(oglas.get('cena', 'Po dogovoru')))
+        
+        # Cena (če manjka €, ga dodaj)
+        cena = str(oglas.get('cena', 'Po dogovoru')).strip()
+        if any(char.isdigit() for char in cena) and '€' not in cena:
+            cena += " €"
+            
         leto = html.escape(str(oglas.get('leto_1_reg', 'Neznano')))
-        km = html.escape(str(oglas.get('prevozenih', 'Neznano')))
-        gorivo = html.escape(str(oglas.get('gorivo', 'Neznano')))
+        
+        # Kilometri (če manjka km, ga dodaj)
+        km = str(oglas.get('prevozenih', 'Neznano')).strip()
+        if any(char.isdigit() for char in km) and 'km' not in km.lower() and km != "Neznano":
+            km += " km"
+        
+        gorivo = html.escape(str(oglas.get('gorivo', 'Neznano'))).replace(' motor', '')
         menjalnik = html.escape(str(oglas.get('menjalnik', 'Neznano')))
         motor = html.escape(str(oglas.get('motor', 'Neznano')))
         link = oglas.get('link', 'https://www.avto.net')
 
+        # Sestava sporočila
         msg = (
-            "🚀 <b>NOV OGLAS NAJDEN!</b>\n"
-            "━━━━━━━━━━━━━━━━━━\n"
-            f"🚘 <b>{ime}</b>\n\n"
-            f"💰 Cena: <b>{cena}</b>\n"
-            f"📅 Letnik: <b>{leto}</b>\n"
-            f"🛣 Kilometri: <b>{km}</b>\n"
-            f"⛽ Gorivo: <b>{gorivo}</b>\n"
-            f"⚙️ Menjalnik: <b>{menjalnik}</b>\n"
-            f"🔌 Motor: <b>{motor}</b>\n\n"
+            f"<b>NOV OGLAS NAJDEN!</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"<b>{ime}</b>\n\n"
+            f"Cena: <b>{cena}</b>\n"
+            f"Letnik: <b>{leto}</b>\n"
+            f"Kilometri: <b>{km}</b>\n"
+            f"Gorivo: <b>{gorivo}</b>\n"
+            f"Menjalnik: <b>{menjalnik}</b>\n"
+            f"Motor: <b>{motor}</b>\n\n"
             f"🔗 <a href='{link}'>KLIKNI ZA OGLED OGLASA</a>"
         )
         return msg

@@ -31,20 +31,14 @@ class AIHandler:
             combined_text += f"OGLAS #{idx+1} [ID:{item['id']}]: {item['text']}\n---\n"
 
         prompt = f"""
-        Iz spodnjih oglasov izlušči podatke za VSAK avto posebej.
-        Vrni IZKLJUČNO JSON seznam objektov.
-
-        Zahtevan format:
-        {{
-            "content_id": "ID",
-            "ime_avta": "polno ime",
-            "cena": "cena v €",
-            "leto_1_reg": "le leto prve registracije",
-            "prevozenih": "kilometri",
-            "gorivo": "vrsta motorja",
-            "menjalnik": "ročni ali avtomatski",
-            "motor": "npr. 1968 ccm, 110 kW / 150 KM"
-        }}
+        Iz spodnjih oglasov izlušči podatke. Vrni IZKLJUČNO JSON seznam objektov.
+        Nujna navodila:
+        1. "cena": Vedno dodaj znak €, npr. "15.900 €". Če piše 'Pokličite', napiši 'Pokličite'.
+        2. "prevozenih": Vedno dodaj 'km', npr. "150.000 km".
+        3. "leto_1_reg": Samo leto, npr. "2020".
+        4. "ime_avta": Skrajšaj naslov, odstrani 'NOVO' ali 'AKCIJA'.
+        5. "gorivo": Uporabi male tiskane (diesel, bencin, hibrid...).
+        6. Če podatka NI, uporabi 'Neznano'.
 
         PODATKI:
         {combined_text}

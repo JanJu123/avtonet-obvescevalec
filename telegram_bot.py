@@ -269,7 +269,6 @@ async def packages_command(update: telegram.Update, context: telegram.ext.Contex
 
 
 
-
 async def broadcast_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     from main import ADMIN_ID
     if str(update.effective_user.id) != str(ADMIN_ID): return
@@ -346,7 +345,7 @@ async def activate_user(update, context):
         db.update_user_subscription(user_id, pkg_name, max_urls, interval, expiry)
 
         await update.message.reply_text(
-            f"🚀 *UPORABNIK NADGRAJEN*\n\n"
+            f"*UPORABNIK NADGRAJEN*\n\n"
             f"👤 ID: `{user_id}`\n"
             f"📦 Paket: {pkg_name}\n"
             f"🔗 Limit: {max_urls} URL / {interval} min\n"
@@ -486,7 +485,6 @@ async def admin_help_command(update: telegram.Update, context: telegram.ext.Cont
         "• `/health` - Status scraperja in poraba MB (24h)\n"
         "• `/proxy_stats` - **Analiza stroškov in napoved**\n"
         "• `/logs` - Zadnjih 5 tehničnih zapisov\n"
-        "• `/set_interval <sek>` - Spremeni hitrost bota\n\n"
         
         "👥 **Uporabniki**\n"
         "• `/users` - Seznam vseh uporabnikov\n"

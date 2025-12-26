@@ -26,43 +26,51 @@ logging.basicConfig(
 )
 logger = logging.getLogger("Main")
 
+# Utišamo hrupne knjižnice (postavimo na WARNING nivo)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("telegram").setLevel(logging.WARNING)
+logging.getLogger("apscheduler").setLevel(logging.WARNING)
+
+# Barve za terminal (ANSI kode)
+B_BLUE = "\033[94m"
+B_CYAN = "\033[96m"
+B_GREEN = "\033[92m"
+B_YELLOW = "\033[93m"
+B_END = "\033[0m"
 
 
 # --- KONSTANTE --- #
 from config import SUBSCRIPTION_PACKAGES, TOKEN, DB_PATH, ADMIN_ID, PROXY_PRICE_GB
 
 async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
-    print("\n--- [PAMETNI CIKEL PREVERJANJA] ---")
+    # Moder Heartbeat z uro
+    current_time = datetime.datetime.now().strftime('%H:%M:%S')
+    print(f"\n{B_CYAN}--- [ PAMETNI CIKEL PREVERJANJA: {current_time} ] ---{B_END}")
     
     db = Database(DB_PATH)
-    
-    # 1. KDO JE NA VRSTI? (Tvoja nova funkcija)
     pending_urls = db.get_pending_urls()
     
     if not pending_urls:
-        print("Mirovanje: Noben URL še ni na vrsti glede na pakete.")
+        print(f"{B_BLUE}💤 Mirovanje: Noben URL še ni na vrsti po paketih.{B_END}")
         return
 
-    # Seznam ID-jev za managerja pozneje
     pending_ids = [u['url_id'] for u in pending_urls]
-    print(f"Na vrsti za skeniranje: {len(pending_ids)} URL-jev.")
+    print(f"{B_GREEN}🚀 Skeniram: {len(pending_ids)} URL-jev na vrsti.{B_END}")
 
     scraper = Scraper(DataBase=db)
     manager = DataManager(db)
 
-    # 2. SKENIRAJ SAMO TISTE, KI SO NA VRSTI
-    # Poskrbi, da tvoj scraper.run() sprejme ta seznam!
-    # scraper.run(pending_urls) 
-    await asyncio.to_thread(scraper.run, pending_urls) # Omogoča, da je telegram bot še vedno odziven če pride do error 403
+    # Scraper teče v svojem threadu
+    await asyncio.to_thread(scraper.run, pending_urls) 
     
-    # 3. PREVERI NOVE OGLASE (Samo za te URL-je)
     novi_oglasi = manager.check_new_offers(filter_url_ids=pending_ids)
 
     if not novi_oglasi:
-        print("Ni novih oglasov za te skene.")
+        print(f"{B_BLUE}ℹ️ Ni novih oglasov za te skene.{B_END}")
         return
 
-    # 4. POŠLJI OBVESTILA IN ZABELEŽI V SentAds
+    print(f"{B_YELLOW}✉️ Pošiljam {len(novi_oglasi)} novih obvestil...{B_END}")
+
     for oglas in novi_oglasi:
         chat_id = oglas['target_user_id']
         tekst = manager.format_telegram_message(oglas)
@@ -70,34 +78,24 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
 
         try:
             if slika:
-                # POPRAVEK: Tukaj je bil "Markdown", spremeni v "HTML"
-                await context.bot.send_photo(
-                    chat_id=chat_id, 
-                    photo=slika, 
-                    caption=tekst, 
-                    parse_mode="HTML"
-                )
+                await context.bot.send_photo(chat_id=chat_id, photo=slika, caption=tekst, parse_mode="HTML")
             else:
-                await context.bot.send_message(
-                    chat_id=chat_id, 
-                    text=tekst, 
-                    parse_mode="HTML", 
-                    disable_web_page_preview=False
-                )
+                await context.bot.send_message(chat_id=chat_id, text=tekst, parse_mode="HTML", disable_web_page_preview=False)
             
-            # Zabelžimo, da je poslano
             db.add_sent_ad(chat_id, oglas['content_id'])
             await asyncio.sleep(0.5) 
         except Exception as e:
-            print(f"Napaka pri pošiljanju uporabniku {chat_id}: {e}")
+            print(f"❌ Napaka pri pošiljanju uporabniku {chat_id}: {e}")
+
+    print(f"{B_GREEN}--- [ CIKEL KONČAN: Poslano ] ---{B_END}")
 
 
 async def daily_maintenance(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
-    print("\n--- [DNEVNO VZDRŽEVANJE BAZE] ---")
+    print(f"\n{B_YELLOW}--- [ DNEVNO VZDRŽEVANJE BAZE ] ---{B_END}")
     db = Database(os.getenv("DB_PATH"))
-    # Ohranimo zadnjih 14 dni, da ne pride do bombardiranja z obvestili
     db.cleanup_sent_ads(days=14)
-    print("--- [VZDRŽEVANJE KONČANO] ---")
+    print(f"{B_GREEN}--- [ VZDRŽEVANJE KONČANO ] ---{B_END}")
+    
 
 async def check_subscription_expirations(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     db = Database(DB_PATH)
