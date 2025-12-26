@@ -31,16 +31,23 @@ class AIHandler:
             combined_text += f"OGLAS #{idx+1} [ID:{item['id']}]: {item['text']}\n---\n"
 
         prompt = f"""
-        Iz spodnjih oglasov izlušči podatke. Vrni IZKLJUČNO JSON seznam objektov.
-        Nujna navodila:
-        1. "cena": Vedno dodaj znak €, npr. "15.900 €". Če piše 'Pokličite', napiši 'Pokličite'.
-        2. "prevozenih": Vedno dodaj 'km', npr. "150.000 km".
-        3. "leto_1_reg": Samo leto, npr. "2020".
-        4. "ime_avta": Skrajšaj naslov, odstrani 'NOVO' ali 'AKCIJA'.
-        5. "gorivo": Uporabi male tiskane (diesel, bencin, hibrid...).
-        6. Če podatka NI, uporabi 'Neznano'.
+        STREŽNIŠKO NAVODILO: Si robotski ekstraktor podatkov. 
+        Tvoj odgovor mora biti IZKLJUČNO veljaven JSON seznam objektov brez dodatnega besedila.
 
-        PODATKI:
+        NUJNA PRAVILA ZA FORMATIRANJE:
+        1. "content_id": Vrni točno številko iz oznake [ID:xxxx].
+        2. "ime_avta": Čisto ime (npr. "Audi A4 2.0 TDI"). Odstrani smeti kot so "NOVO", "AKCIJA", "1. LASTNIK".
+        3. "cena": Številka s piko in znak €, npr. "12.490 €". Če piše 'Pokličite', napiši 'Pokličite'.
+        4. "leto_1_reg": Samo 4-mestna številka leta, npr. "2021".
+        5. "prevozenih": Številka s piko in 'km', npr. "145.000 km".
+        6. "gorivo": Mala tiskana beseda (diesel, bencin, hibrid, elektro).
+        7. "menjalnik": "avtomatski" ali "ročni".
+        8. "motor": Prostornina in moč, npr. "1968 ccm, 110 kW / 150 KM".
+
+        VAROVALKA: Če podatka ne najdeš, uporabi vrednost "Neznano". 
+        NIKOLI ne spreminjaj imen ključev (content_id, ime_avta, itd.), sicer sistem ne bo deloval.
+
+        PODATKI ZA OBDELAVO:
         {combined_text}
         """
 

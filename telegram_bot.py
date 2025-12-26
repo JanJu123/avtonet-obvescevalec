@@ -5,6 +5,7 @@ import sqlite3
 import asyncio
 from datetime import datetime, timedelta
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import BotCommand, BotCommandScopeDefault, BotCommandScopeChat
 
 from dotenv import load_dotenv
 import os
@@ -15,26 +16,39 @@ DB_PATH = os.getenv("DB_PATH")
 db = Database(DB_PATH)
 
 
-
-
 async def start_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    from config import ADMIN_ID # Uvozimo admin ID
     user = update.effective_user
     
-    # Poskusimo registrirati uporabnika
+    # 1. Poskusimo registrirati uporabnika
     is_new = db.register_user(user.id, user.first_name)
 
     if is_new:
-        # Sporočilo za novega uporabnika s Trial paketom
+        # --- OBVESTILO ZA ADMINA (Tate) ---
+        admin_alert = (
+            "🔔 <b>NOV UPORABNIK!</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            f"👤 Ime: <b>{user.first_name}</b>\n"
+            f"🆔 ID: <code>{user.id}</code>\n"
+            f"🏷 Username: @{user.username if user.username else 'Nima'}\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "🚀 Sistem mu je avtomatsko podelil <b>TRIAL</b> paket."
+        )
+        try:
+            await context.bot.send_message(chat_id=ADMIN_ID, text=admin_alert, parse_mode="HTML")
+        except:
+            pass # Če tebi ne more poslati, ne ustaviš bota za stranko
+
+        # Sporočilo za novega uporabnika
         msg = (
             f"Pozdravljen, <b>{user.first_name}</b>! 👋\n\n"
             "Sem tvoj osebni Avto.net obveščevalec. Ker si nov, sem ti pravkar "
             "avtomatsko aktiviral <b>3-dnevni BREZPLAČNI PREIZKUS (TRIAL)</b>! 🎉\n\n"
-            "<b>Tvoj testni paket vključuje:</b>\n"
+            "<b>Tvoj paket vključuje:</b>\n"
             "• 1 URL za sledenje\n"
             "• Osveževanje na 15 minut\n\n"
             "Da začneš, mi pošlji URL z ukazom <code>/add_url</code> ali poglej navodila na /help."
         )
-        # Logiranje za admina
         db.log_user_activity(user.id, "/start", "Nov uporabnik - Trial aktiviran")
     else:
         # Sporočilo za obstoječega uporabnika
@@ -558,6 +572,45 @@ async def admin_logs_command(update: telegram.Update, context: telegram.ext.Cont
 
 async def error(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     print(f"Update {update} caused error {context.error}")
+
+
+
+async def post_init(application: telegram.ext.Application) -> None:
+    from main import ADMIN_ID
+    # 1. Ukazi za navadne uporabnike
+    user_commands = [
+        BotCommand("start", "Začetek in registracija"),
+        BotCommand("add_url", "Dodaj nov URL"),
+        BotCommand("list", "Moja iskanja"),
+        BotCommand("remove_url", "Izbriši iskanje"),
+        BotCommand("info", "Moj profil in status"),
+        BotCommand("help", "Navodila za uporabo"),
+        BotCommand("packages", "Cenik paketov")
+    ]
+    await application.bot.set_bot_commands(user_commands, scope=BotCommandScopeDefault())
+
+    # 2. Ukazi samo zate (Admin)
+    admin_commands = user_commands + [
+        BotCommand("admin", "👑 Admin Center"),
+        BotCommand("admin_stats", "📊 Globalna statistika"),
+        BotCommand("proxy_stats", "💸 Stroški proxyjev"),
+        BotCommand("health", "🏥 Zdravje sistema"),
+        BotCommand("users", "👥 Seznam uporabnikov"),
+        BotCommand("logs", "📜 Zadnje aktivnosti"),
+        BotCommand("broadcast", "📢 Pošlji obvestilo")
+    ]
+    
+    try:
+        # Pretvori ADMIN_ID v int, če je v .env zapisan kot string
+        await application.bot.set_bot_commands(
+            admin_commands, 
+            scope=BotCommandScopeChat(chat_id=int(ADMIN_ID))
+        )
+        print("✅ Ukazi za Admina in Uporabnike so nastavljeni.")
+    except Exception as e:
+        print(f"⚠️ Napaka pri nastavljanju admin ukazov: {e}")
+
+
 
 
 

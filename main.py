@@ -6,7 +6,7 @@ from scraper import Scraper
 from data_manager import DataManager
 from telegram_bot import start_command, list_command, add_url_command, remove_url_command, info_command, activate_user, \
     deactivate_user, admin_stats_command, admin_help_command, broadcast_command, list_users_admin, admin_logs_command, \
-    health_command, check_user_command, proxy_stats_command, packages_command, help_command
+    health_command, check_user_command, proxy_stats_command, packages_command, help_command, post_init
 from dotenv import load_dotenv
 import os
 import datetime
@@ -43,19 +43,22 @@ B_END = "\033[0m"
 from config import SUBSCRIPTION_PACKAGES, TOKEN, DB_PATH, ADMIN_ID, PROXY_PRICE_GB
 
 async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
-    # Moder Heartbeat z uro
-    current_time = datetime.datetime.now().strftime('%H:%M:%S')
-    print(f"\n{B_CYAN}--- [ PAMETNI CIKEL PREVERJANJA: {current_time} ] ---{B_END}")
+    # Pomožna funkcija za trenutni čas
+    def get_time():
+        return datetime.datetime.now().strftime('%H:%M:%S')
+
+    print(f"\n{B_CYAN}--- [ PAMETNI CIKEL PREVERJANJA: {get_time()} ] ---{B_END}")
     
     db = Database(DB_PATH)
     pending_urls = db.get_pending_urls()
     
     if not pending_urls:
-        print(f"{B_BLUE}💤 Mirovanje: Noben URL še ni na vrsti po paketih.{B_END}")
+        print(f"{B_BLUE}[{get_time()}] 💤 Mirovanje: Noben URL še ni na vrsti.{B_END}")
         return
 
     pending_ids = [u['url_id'] for u in pending_urls]
-    print(f"{B_GREEN}🚀 Skeniram: {len(pending_ids)} URL-jev na vrsti.{B_END}")
+    # TUKAJ JE ZELENA VRSTICA S ČASOM
+    print(f"{B_GREEN}[{get_time()}] 🚀 Skeniram: {len(pending_ids)} URL-jev na vrsti.{B_END}")
 
     scraper = Scraper(DataBase=db)
     manager = DataManager(db)
@@ -66,10 +69,10 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     novi_oglasi = manager.check_new_offers(filter_url_ids=pending_ids)
 
     if not novi_oglasi:
-        print(f"{B_BLUE}ℹ️ Ni novih oglasov za te skene.{B_END}")
+        print(f"{B_BLUE}[{get_time()}] ℹ️ Ni novih oglasov za te skene.{B_END}")
         return
 
-    print(f"{B_YELLOW}✉️ Pošiljam {len(novi_oglasi)} novih obvestil...{B_END}")
+    print(f"{B_YELLOW}[{get_time()}] ✉️ Pošiljam {len(novi_oglasi)} novih obvestil...{B_END}")
 
     for oglas in novi_oglasi:
         chat_id = oglas['target_user_id']
@@ -85,9 +88,9 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
             db.add_sent_ad(chat_id, oglas['content_id'])
             await asyncio.sleep(0.5) 
         except Exception as e:
-            print(f"❌ Napaka pri pošiljanju uporabniku {chat_id}: {e}")
+            print(f"[{get_time()}] ❌ Napaka pri pošiljanju uporabniku {chat_id}: {e}")
 
-    print(f"{B_GREEN}--- [ CIKEL KONČAN: Poslano ] ---{B_END}")
+    print(f"{B_GREEN}[{get_time()}] --- [ CIKEL KONČAN: Uspešno poslano ] ---{B_END}")
 
 
 async def daily_maintenance(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
@@ -95,7 +98,7 @@ async def daily_maintenance(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     db = Database(os.getenv("DB_PATH"))
     db.cleanup_sent_ads(days=14)
     print(f"{B_GREEN}--- [ VZDRŽEVANJE KONČANO ] ---{B_END}")
-    
+
 
 async def check_subscription_expirations(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     db = Database(DB_PATH)
@@ -168,7 +171,7 @@ def main():
 
     # Nastavitev bota
     # Uporabimo defaults, da ne pišemo parse_mode v vsak klic
-    application = telegram.ext.Application.builder().token(TOKEN).build()
+    application = telegram.ext.Application.builder().token(TOKEN).post_init(post_init).build()
 
     # --- REGISTRACIJA HANDLERJEV ---
     # (Tukaj poveži svoje že delujoče funkcije)
