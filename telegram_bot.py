@@ -587,7 +587,7 @@ async def post_init(application: telegram.ext.Application) -> None:
         BotCommand("help", "Navodila za uporabo"),
         BotCommand("packages", "Cenik paketov")
     ]
-    await application.bot.set_bot_commands(user_commands, scope=BotCommandScopeDefault())
+    await application.bot.set_my_commands(user_commands, scope=BotCommandScopeDefault())
 
     # 2. Ukazi samo zate (Admin)
     admin_commands = user_commands + [
@@ -602,7 +602,7 @@ async def post_init(application: telegram.ext.Application) -> None:
     
     try:
         # Pretvori ADMIN_ID v int, če je v .env zapisan kot string
-        await application.bot.set_bot_commands(
+        await application.bot.set_my_commands(
             admin_commands, 
             scope=BotCommandScopeChat(chat_id=int(ADMIN_ID))
         )
