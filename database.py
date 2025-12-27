@@ -820,6 +820,21 @@ class Database:
             'avg_daily_gb': weekly_avg_gb
         }
     
+    def get_user_tracked_urls(self, telegram_id):
+        """Vrne seznam vseh URL-jev, ki jih uporabnik spremlja."""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        query = """
+            SELECT u.url_id, u.url
+            FROM Tracking t
+            JOIN Urls u ON t.url_id = u.url_id
+            WHERE t.telegram_id = ?
+        """
+        rows = c.execute(query, (telegram_id,)).fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+
     def add_sent_ad(self, telegram_id, content_id):
         conn = self.get_connection()
         c = conn.cursor()

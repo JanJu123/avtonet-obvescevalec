@@ -494,31 +494,53 @@ async def health_command(update: telegram.Update, context: telegram.ext.ContextT
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def check_user_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
-    from main import ADMIN_ID
+    from config import ADMIN_ID
     if str(update.effective_user.id) != str(ADMIN_ID): return
     if not context.args:
-        await update.message.reply_text("Uporaba: `/check_user <ID>`")
+        await update.message.reply_text("Uporaba: <code>/check_user ID</code>", parse_mode="HTML")
         return
         
     target_id = context.args[0]
-    user, url_count, last_ads = db.get_user_diagnostic(target_id)
+    user = db.get_user(target_id) # tvoja obstoječa funkcija
+    url_count = db.get_user_stats_24h(target_id) # tvoja obstoječa funkcija
     
     if not user:
-        await update.message.reply_text("Uporabnika ne najdem v bazi.")
+        await update.message.reply_text("Uporabnika ni v bazi.")
         return
 
+    # 1. Pridobimo seznam dejanskih URL-jev
+    tracked_urls = db.get_user_tracked_urls(target_id)
+    urls_list_text = ""
+    for i, u in enumerate(tracked_urls, 1):
+        # Skrajšamo prikaz linka, da sporočilo ni predolgo, a ostane klikljivo
+        urls_list_text += f"{i}. 🆔 {u['url_id']}: <a href='{u['url']}'>Odpri link</a>\n"
+    
+    if not urls_list_text:
+        urls_list_text = "Uporabnik nima dodanih URL-jev."
+
+    # 2. Pridobimo zadnjih 5 oglasov (iz SentAds)
+    # Tukaj uporabi svojo obstoječo logiko ali klic baze
+    _, _, last_ads = db.get_user_diagnostic(target_id)
     ads_info = "\n".join([f"• {a['sent_at']}" for a in last_ads]) if last_ads else "Ni še prejel oglasov."
 
+    status_icon = "🟢" if user['is_active'] else "🔴"
+
     msg = (
-        f"🔍 **DIAGNOZA: {user['telegram_name']}** ({target_id})\n\n"
-        f"💳 Paket: `{user['subscription_type']}`\n"
-        f"⏳ Poteče: `{user['subscription_end']}`\n"
-        f"🔗 Aktivni URL-ji: `{url_count} / {user['max_urls']}`\n"
-        f"⏱ Interval: `{user['scan_interval']} min`\n"
-        f"✅ Aktiven: {'DA' if user['is_active'] else 'NE'}\n\n"
-        f"📨 **Zadnjih 5 poslanih oglasov:**\n{ads_info}"
+        f"🔍 <b>DIAGNOZA: {user.get('telegram_name', 'Neznan')}</b> (<code>{target_id}</code>)\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"📦 <b>Paket:</b> {user['subscription_type']}\n"
+        f"⏳ <b>Poteče:</b> <code>{user['subscription_end']}</code>\n"
+        f"✅ <b>Status:</b> {status_icon} {'Aktiven' if user['is_active'] else 'Neaktiven'}\n"
+        f"⏱ <b>Interval:</b> {user['scan_interval']} min\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"🔗 <b>TRENUTNA ISKANJA ({len(tracked_urls)}/{user['max_urls']}):</b>\n"
+        f"{urls_list_text}\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"📨 <b>ZADNJA OBVESTILA:</b>\n"
+        f"{ads_info}"
     )
-    await update.message.reply_text(msg, parse_mode="Markdown")
+
+    await update.message.reply_text(msg, parse_mode="HTML", disable_web_page_preview=True)
 
 
 async def admin_help_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
