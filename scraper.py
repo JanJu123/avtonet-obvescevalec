@@ -13,19 +13,30 @@ class Scraper:
         self.ai = AIHandler()
 
     def get_latest_offers(self, url):
-        """Pridobi oglase in zabeleži REALNO (stisnjeno) porabo za bazo."""
+        """Pridobi oglase, očisti URL in zabeleži REALNO porabo podatkov."""
         
+        # --- 1. KORAK: ČIŠČENJE URL-ja (Sanitization) ---
+        # Odstranimo oklepaje < >, presledke in nove vrstice
+        url = url.strip().strip('<>').replace(' ', '').replace('\n', '').replace('\r', '')
+        
+        # Preverimo, če URL sploh izgleda kot veljaven naslov
+        if not url.startswith("http"):
+            print(f"⚠️ [SCRAPER] URL zavrnjen (napačen format): {url[:50]}...")
+            return None, 0
+
         headers = {
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
             'Accept-Language': 'sl-SI,sl;q=0.9,en-GB;q=0.8,en;q=0.7',
-            'Accept-Encoding': 'gzip, deflate, br',
+            'Accept-Encoding': 'gzip, deflate, br', # Zahtevamo stiskanje
             'Referer': 'https://www.google.com/',
             'Connection': 'keep-alive'
         }
 
         try:
+            # Človeški premor pred klicem
             time.sleep(random.uniform(2, 4))
 
+            # Uporabimo curl_cffi za obhod Cloudflare zaščite
             response = requests.get(
                 url, 
                 impersonate="chrome120", 
@@ -33,34 +44,32 @@ class Scraper:
                 timeout=30
             )
             
-            # Preverimo, katero stiskanje je uporabil strežnik
+            # Preverimo stiskanje (Encoding)
             encoding = response.headers.get('Content-Encoding', '').lower()
             
             if response.status_code == 200:
-                # Velikost odpakiranih podatkov v RAM-u (npr. 850 KB)
+                # Velikost odpakiranih podatkov v RAM-u
                 decompressed_size = len(response.content)
                 
-                # --- LOGIKA ZA REALNO MERJENJE ---
+                # --- 2. KORAK: LOGIKA ZA REALNO MERJENJE ---
                 if any(comp in encoding for comp in ['gzip', 'br', 'deflate']):
-                    # Če je stisnjeno, ocenimo, da je čez žico potovalo le 20% podatkov.
-                    # To je tisto, kar ti bo proxy dejansko odštel.
+                    # Če je stisnjeno (kot je bilo v tvojem debugu), zapišemo 20% velikosti
                     wire_size = int(decompressed_size * 0.20)
                     savings = 80.0
                 else:
-                    # Če ni stiskanja (npr. napaka pri prenosu), upoštevamo polno težo.
+                    # Če ni stiskanja, zabeležimo polno težo
                     wire_size = decompressed_size
                     savings = 0.0
                 
                 print(f"✅ Dostop OK! [Ocenjen promet: {round(wire_size/1024, 1)} KB | Prihranek: {savings}% | Encoding: {encoding}]")
                 
-                # Vrnemo HTML in REALNO porabo za tvoj /proxy_stats
                 return response.text, wire_size
             else:
-                print(f"❌ Napaka {response.status_code}")
+                print(f"❌ Napaka {response.status_code} na Avto.net")
                 return None, 0
                 
         except Exception as e:
-            print(f"❌ Napaka pri skeniranju: {e}")
+            print(f"❌ Napaka pri skeniranju (CURL): {e}")
             return None, 0
 
     def _is_top_ponudba(self, row_soup):
