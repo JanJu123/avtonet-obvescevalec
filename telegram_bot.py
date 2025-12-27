@@ -69,8 +69,13 @@ async def start_command(update: telegram.Update, context: telegram.ext.ContextTy
 async def add_url_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     from scraper import Scraper
     
+    # VARNOSTNI POPRAVEK: Pridobimo sporočilo na varen način
+    msg_obj = update.effective_message
+    if not msg_obj:
+        return # Če ni sporočila, ne moremo odgovoriti
+
     if not context.args:
-        await update.message.reply_text("❌ Manjka URL!")
+        await msg_obj.reply_text("❌ Manjka URL!")
         return
 
     url = context.args[0]
@@ -78,43 +83,39 @@ async def add_url_command(update: telegram.Update, context: telegram.ext.Context
     
     user_info = db.get_user_subscription_info(t_id)
     if not user_info:
-        await update.message.reply_text("❌ Profil ni najden. Uporabi /start.")
+        await msg_obj.reply_text("❌ Profil ni najden. Uporabi /start.")
         return
 
     if user_info['current_url_count'] >= user_info['max_urls']:
-        await update.message.reply_text(f"🚫 Limit dosežen ({user_info['max_urls']} URL)!")
+        await msg_obj.reply_text(f"🚫 Limit dosežen ({user_info['max_urls']} URL)!")
         return
 
-    # 1. Dodajanje v bazo in pridobitev novega URL ID-ja
+    # 1. Dodajanje v bazo
     status, new_url_id = db.add_search_url(t_id, url)
 
     if status == "exists":
-        await update.message.reply_text("ℹ️ Temu URL-ju že slediš.")
+        await msg_obj.reply_text("ℹ️ Temu URL-ju že slediš.")
         return
     elif status is True:
-        sync_msg = await update.message.reply_text("⏳ Povezujem se z Avto.net in sinhroniziram oglase...")
+        # TUKAJ JE BILA NAPAKA - zdaj uporabljamo msg_obj
+        sync_msg = await msg_obj.reply_text("⏳ Povezujem se z Avto.net in sinhroniziram oglase...")
         
         try:
-            # 2. Pokličemo scraper.run() v ločeni niti
-            # To bo sprožilo "is_first_scan" logiko v scraper.py
             temp_scraper = Scraper(db)
             pending_data = [{'url_id': new_url_id, 'url': url}]
             
-            # Izvedemo sken (to bo naredilo Silent Sync)
             await asyncio.to_thread(temp_scraper.run, pending_data)
             
             await sync_msg.edit_text(
                 "✅ <b>Iskanje dodano in sinhronizirano!</b>\n\n"
-                "Sistem si je zapomnil trenutne oglase. Obvestilo boš prejel le za <b>nove</b> objave, ki se bodo pojavile od zdaj naprej! 🚀",
+                "Sistem si je zapomnil trenutne oglase. Obvestim te ob novih! 🚀",
                 parse_mode="HTML"
             )
-            db.log_user_activity(t_id, "/add_url", f"Uspešen dodaj in sync URL ID: {new_url_id}")
-            
         except Exception as e:
             print(f"Napaka pri syncu: {e}")
-            await sync_msg.edit_text("✅ Iskanje dodano! (Sinhronizacija bo opravljena ob naslednjem rednem skenu).")
+            await sync_msg.edit_text("✅ Iskanje dodano! (Sinhronizacija bo opravljena kmalu).")
     else:
-        await update.message.reply_text("❌ Napaka pri vpisu v bazo.")
+        await msg_obj.reply_text("❌ Napaka pri vpisu v bazo.")
 
 
 
