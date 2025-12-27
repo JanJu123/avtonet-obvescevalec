@@ -830,17 +830,41 @@ class Database:
             conn.close()
 
     # 2. Metoda za aktivacijo paketa
-    def update_user_subscription(self, telegram_id, subscription_type, max_urls, interval, subscription_end):
+    def update_user_subscription(self, telegram_id, pkg_type, max_urls, interval, days_to_add):
+        """Podaljša naročnino tako, da prišteje dni k obstoječemu datumu."""
         conn = self.get_connection()
         c = conn.cursor()
+        
+        # 1. Pridobimo trenutni datum poteka
+        user = c.execute("SELECT subscription_end FROM Users WHERE telegram_id = ?", (telegram_id,)).fetchone()
+        
+        now = datetime.datetime.now()
+        if user and user['subscription_end']:
+            try:
+                # Pretvori string iz baze v objekt
+                current_expiry = datetime.datetime.strptime(user['subscription_end'], "%d.%m.%Y %H:%M:%S")
+                # Če je naročnina še veljavna, začnemo prištevati od datuma poteka, sicer od danes
+                start_date = max(now, current_expiry)
+            except:
+                start_date = now
+        else:
+            start_date = now
+        
+        # Izračun novega datuma
+        new_expiry_dt = start_date + datetime.timedelta(days=days_to_add)
+        new_expiry_str = new_expiry_dt.strftime("%d.%m.%Y %H:%M:%S")
+
+        # 2. Posodobimo uporabnika (novi limiti stopijo v veljavo TAKOJ)
         c.execute("""
             UPDATE Users 
             SET subscription_type = ?, max_urls = ?, scan_interval = ?, 
                 subscription_end = ?, is_active = 1, expiry_reminder_sent = 0
             WHERE telegram_id = ?
-        """, (subscription_type, max_urls, interval, subscription_end, telegram_id))
+        """, (pkg_type, max_urls, interval, new_expiry_str, telegram_id))
+        
         conn.commit()
         conn.close()
+        return new_expiry_str
 
     # 3. Metoda za preverjanje števila URL-jev
     def get_user_stats(self, telegram_id):
@@ -888,75 +912,62 @@ class Database:
 
 
     def get_pending_urls(self):
-        """
-        Vrne seznam URL-jev, ki so na vrsti za skeniranje.
-        Vključuje 'NIGHT MODE' varčevanje (00:00 - 07:00).
-        """
+        """Vrne samo URL-je, ki so znotraj limita uporabnikovega paketa."""
         conn = self.get_connection()
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         
-        # 1. Pridobimo URL-je in ugotovimo, če jih spremlja kakšen VIP
-        # has_vip bo 1, če vsaj en uporabnik na tem URL-ju ima VIP paket
+        # Ta SQL magija oštevilči URL-je vsakega uporabnika. 
+        # Če ima nekdo 17 URL-jev, paket pa mu dovoljuje le 5, 
+        # bo ta poizvedba vrnila le prvih 5 (po datumu dodajanja).
         query = """
-            SELECT 
-                u.url_id, 
-                u.url, 
-                MIN(us.scan_interval) as min_interval,
-                MAX(CASE WHEN us.subscription_type = 'VIP' THEN 1 ELSE 0 END) as has_vip
-            FROM Tracking t
-            JOIN Urls u ON t.url_id = u.url_id
-            JOIN Users us ON t.telegram_id = us.telegram_id
-            WHERE us.is_active = 1
-            GROUP BY u.url_id
+            WITH RankedTracking AS (
+                SELECT 
+                    t.url_id, 
+                    u.url, 
+                    us.scan_interval,
+                    us.subscription_type,
+                    us.is_active,
+                    ROW_NUMBER() OVER (PARTITION BY us.telegram_id ORDER BY t.created_at ASC) as url_rank,
+                    us.max_urls
+                FROM Tracking t
+                JOIN Urls u ON t.url_id = u.url_id
+                JOIN Users us ON t.telegram_id = us.telegram_id
+                WHERE us.is_active = 1
+            )
+            SELECT url_id, url, MIN(scan_interval) as min_interval,
+                MAX(CASE WHEN subscription_type = 'ULTRA' THEN 1 ELSE 0 END) as has_ultra
+            FROM RankedTracking
+            WHERE url_rank <= max_urls
+            GROUP BY url_id
         """
         active_urls = c.execute(query).fetchall()
         
         pending = []
         now = datetime.datetime.now()
-        
-        # Preverimo, če je trenutno nočni čas (med 00:00 in 07:00)
         is_night = 0 <= now.hour < 7
-        
+
         for row in active_urls:
-            url_id = row['url_id']
-            url = row['url']
-            has_vip = row['has_vip']
-            base_interval = row['min_interval']
-            
-            # --- LOGIKA ZA INTERVAL ---
+            u_id = row['url_id']
+            # Nočni način: Ultra na 15 min, ostali na 30 min
             if is_night:
-                # Nočni način: VIP = 15 min, vsi ostali = 30 min
-                current_interval = 15 if has_vip else 30
+                current_interval = 15 if row['has_ultra'] else 30
             else:
-                # Dnevni način: Uporabimo njihov zakupljen interval
-                current_interval = base_interval
+                current_interval = row['min_interval']
                 
-            # --- PREVERJANJE ZADNJEGA USPEŠNEGA SKENA ---
-            last_log = c.execute("""
-                SELECT timestamp FROM ScraperLogs 
-                WHERE url_id = ? AND status_code = 200 
-                ORDER BY id DESC LIMIT 1
-            """, (url_id,)).fetchone()
+            last_log = c.execute("SELECT timestamp FROM ScraperLogs WHERE url_id = ? AND status_code = 200 ORDER BY id DESC LIMIT 1", (u_id,)).fetchone()
             
             if not last_log:
-                # Če še nikoli ni bil skeniran, ga dodamo takoj
-                pending.append({'url_id': url_id, 'url': url})
+                pending.append({'url_id': u_id, 'url': row['url']})
             else:
                 try:
                     last_time = datetime.datetime.strptime(last_log['timestamp'], "%d.%m.%Y %H:%M:%S")
-                    diff_minutes = (now - last_time).total_seconds() / 60
-                    
-                    # Če je preteklo dovolj časa (z 0.2 min tolerance za scheduler)
-                    if diff_minutes >= (current_interval - 0.2):
-                        pending.append({'url_id': url_id, 'url': url})
-                except Exception as e:
-                    # V primeru napake pri datumu raje skeniramo
-                    print(f"Napaka pri računanju časa za URL {url_id}: {e}")
-                    pending.append({'url_id': url_id, 'url': url})
+                    if (now - last_time).total_seconds() / 60 >= (current_interval - 0.2):
+                        pending.append({'url_id': u_id, 'url': row['url']})
+                except:
+                    pending.append({'url_id': u_id, 'url': row['url']})
                     
         conn.close()
-        
         if pending:
             print(f"[NIGHT-MODE: {'ON' if is_night else 'OFF'}] Na vrsti za skeniranje: {len(pending)} URL-jev.")
             
@@ -1058,6 +1069,40 @@ class Database:
         c.execute("UPDATE Users SET expiry_reminder_sent = 1 WHERE telegram_id = ?", (telegram_id,))
         conn.commit()
         conn.close()
+
+
+    def get_user_urls_with_status(self, telegram_id):
+        """Vrne URL-je z oznako, ali so aktivni ali zamrznjeni zaradi limita."""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        
+        # Pridobimo limit uporabnika
+        user = c.execute("SELECT max_urls FROM Users WHERE telegram_id = ?", (telegram_id,)).fetchone()
+        limit = user['max_urls'] if user else 0
+        
+        # Pridobimo vse njegove URL-je
+        res = c.execute("""
+            SELECT u.url_id, u.url, t.created_at
+            FROM Tracking t 
+            JOIN Urls u ON t.url_id = u.url_id 
+            WHERE t.telegram_id = ?
+            ORDER BY t.created_at ASC
+        """, (telegram_id,)).fetchall()
+        
+        urls_list = []
+        for idx, row in enumerate(res):
+            # Če je zaporedna številka večja od limita, je zamrznjen
+            is_active = (idx < limit)
+            urls_list.append({
+                'url_id': row['url_id'],
+                'url': row['url'],
+                'active': is_active
+            })
+            
+        conn.close()
+        return urls_list
+
 
 
     def get_newly_expired_users(self):

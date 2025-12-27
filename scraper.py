@@ -99,16 +99,35 @@ class Scraper:
         }
 
     def _clean_row_for_ai(self, row_soup):
-        """Pripravi čist tekst za AI."""
-        naziv = row_soup.find('div', class_='GO-Results-Naziv')
-        data = row_soup.find('div', class_='GO-Results-Data-Top')
-        price_mid = row_soup.find('div', class_='GO-Results-Price-Mid')
+        """Pobere ključne dele in jih strukturira za AI, da prepreči 'Neznano' rezultate."""
         
-        txt = ""
-        if naziv: txt += f"AVTO: {naziv.get_text(strip=True)} | "
-        if price_mid: txt += f"CENA: {price_mid.get_text(separator=' ', strip=True)} | "
-        if data:  txt += f"PODATKI: {data.get_text(separator=', ', strip=True)}"
-        return txt
+        # 1. NAZIV (Audi A4, BMW 3...)
+        naziv_tag = row_soup.find('div', class_='GO-Results-Naziv')
+        naziv = naziv_tag.get_text(strip=True) if naziv_tag else "Neznano"
+
+        # 2. PODATKI (Letnik, KM, Gorivo)
+        # Namesto samo '-Top' vzamemo celoten blok '-Data', ki je bolj varen
+        data_tag = row_soup.find('div', class_=re.compile(r'GO-Results-Data'))
+        if data_tag:
+            # get_text(separator=' | ') je ključen, da se npr. letnik in km ne zlepita v 2021150000km
+            podatki = data_tag.get_text(separator=' | ', strip=True)
+        else:
+            podatki = ""
+
+        # 3. CENA (Iščemo vse, kar diši po ceni)
+        cena_tag = row_soup.find('div', class_=re.compile(r'Price|Cena'))
+        cena = ""
+        if cena_tag:
+            # Vzamemo ves tekst v cenovnem bloku (tudi akcijske cene)
+            cena = cena_tag.get_text(separator=' ', strip=True)
+
+        # --- VAROVALKA (Fallback) ---
+        # Če kljub vsemu nismo našli podatkov ali cene, potem vzamemo ves tekst vrstice
+        if not podatki or len(cena) < 2:
+            return row_soup.get_text(separator=' ', strip=True)[:500]
+
+        # Združimo v čist, označen niz, ki ga AI obožuje
+        return f"AVTO: {naziv} | PODATKI: {podatki} | CENA: {cena}"
 
     def _get_new_ads_raw(self, html_content):
         """Prepozna vse vrstice, preskoči TOP ponudbe in vzame max 5 novih."""

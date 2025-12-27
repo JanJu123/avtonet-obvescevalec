@@ -6,7 +6,7 @@ from scraper import Scraper
 from data_manager import DataManager
 from telegram_bot import start_command, list_command, add_url_command, remove_url_command, info_command, activate_user, \
     deactivate_user, admin_stats_command, admin_help_command, broadcast_command, list_users_admin, admin_logs_command, \
-    health_command, check_user_command, proxy_stats_command, packages_command, help_command, post_init
+    health_command, check_user_command, proxy_stats_command, packages_command, help_command, post_init, server_status_command
 from dotenv import load_dotenv
 import os
 import datetime
@@ -136,7 +136,7 @@ async def check_subscription_expirations(context: telegram.ext.ContextTypes.DEFA
         t_id = user['telegram_id']
         msg = (
             "⚠️ <b>OPOZORILO O POTEKU NAROČNINE</b>\n\n"
-            f"Tvoj paket <b>{user['package_type']}</b> poteče čez manj kot 24 ur!\n"
+            f"Tvoj paket <b>{user['subscription_type']}</b> poteče čez manj kot 24 ur!\n"
             f"📅 Veljavnost do: <code>{user['subscription_end']}</code>\n\n"
             "Če želiš neprekinjeno prejemanje oglasov, prosim pravočasno podaljšaj naročnino.\n"
             "Preveri ponudbo z ukazom: /packages"
@@ -197,6 +197,7 @@ def main():
     application.add_handler(telegram.ext.CommandHandler("check_user", check_user_command))
     application.add_handler(telegram.ext.CommandHandler("proxy_stats", proxy_stats_command))
 
+    application.add_handler(telegram.ext.CommandHandler("server", server_status_command))
     application.add_handler(telegram.ext.CommandHandler("logs", admin_logs_command))
 
     # --- NASTAVITEV PERIODIČNEGA OPRAVILA ---
