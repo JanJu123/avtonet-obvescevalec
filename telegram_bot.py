@@ -351,42 +351,47 @@ async def list_users_admin(update: telegram.Update, context: telegram.ext.Contex
         await update.message.reply_text("Baza je prazna.")
         return
 
-    # Glava sporočila
+    # DEFINICIJA ŠIRIN ZA ODLIČNO PORAVNAVO
+    w_pkg = 6   # ULTRA, PRO...
+    w_id = 11   # Telegram ID
+    w_name = 10 # Ime
+    w_hnd = 12  # @Handle
+
+    # Glava (napišemo jo posebej, da veš kateri stolpec je kateri)
+    header = f"{'PAKET':<{w_pkg}} | {'ID':<{w_id}} | {'IME':<{w_name}} | {'@HANDLE':<{w_hnd}} | {'POTEČE'}"
+    
     msg = "👥 <b>ADMIN NADZORNA PLOŠČA</b>\n"
-    msg += "━━━━━━━━━━━━━━━━━━\n"
-    msg += "<code>ST | PAKET  | ID (copy)   | @HANDLE (copy)</code>\n"
-    msg += "━━━━━━━━━━━━━━━━━━\n\n"
+    msg += f"<code>{header}</code>\n"
+    msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
 
     for row in users:
-        # KLJUČNI POPRAVEK: spremenimo Row v Dict
-        u = dict(row)
+        u = dict(row) # Pretvorba v dict za .get()
         
-        # 1. Status Emoji
-        st = "💎" if u['is_active'] else "❌"
+        # 1. Izbira emojija
+        status_emoji = "💎" if u['is_active'] else "❌"
         
-        # 2. Paket
+        # 2. Priprava podatkov
         pkg = (u['subscription_type'] or "NONE").upper()
-        pkg_display = f"<b>{pkg:<6}</b>"
+        uid = str(u['telegram_id'])
         
-        # 3. ID (skopira se na klik)
-        uid = f"<code>{u['telegram_id']}</code>"
+        # Ime (skrajšamo na w_name)
+        name = u['telegram_name'] or "Neznan"
+        if len(name) > w_name:
+            name = name[:w_name-1] + "."
+            
+        # Handle (skrajšamo na w_hnd)
+        hnd = f"@{u['telegram_username']}" if u.get('telegram_username') else "Brez@"
+        if len(hnd) > w_hnd:
+            hnd = hnd[:w_hnd-1] + "."
+            
+        # Datum
+        exp = u['subscription_end'].split(" ")[0] if u['subscription_end'] else "---"
+
+        # 3. Sestava vrstice s f-string poravnavo
+        # Vse zapremo v <code>, da je celotna vrstica klikljiva za kopiranje
+        row_text = f"{pkg:<{w_pkg}} | {uid:<{w_id}} | {name:<{w_name}} | {hnd:<{w_hnd}} | {exp}"
         
-        # 4. Handle ali Ime (skopira se na klik)
-        # Zdaj .get() končno dela!
-        raw_handle = u.get('telegram_username')
-        if raw_handle:
-            handle = f"@{raw_handle}"
-        else:
-            handle = u['telegram_name'] or "Neznan"
-        
-        if len(handle) > 12:
-            handle = handle[:10] + ".."
-        
-        u_copy = f"<code>{handle}</code>"
-        
-        # Sestavimo vrstico
-        msg += f"{st} | {pkg_display} | {uid} | {u_copy}\n"
-        msg += "──────────────────\n"
+        msg += f"{status_emoji} <code>{row_text}</code>\n"
 
     await update.message.reply_text(msg, parse_mode="HTML")
     
