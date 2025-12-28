@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram import BotCommand, BotCommandScopeDefault, BotCommandScopeChat
 
+import utils
+
 import psutil
 import shutil
 import platform
@@ -69,53 +71,47 @@ async def start_command(update: telegram.Update, context: telegram.ext.ContextTy
 async def add_url_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     from scraper import Scraper
     
-    # VARNOSTNI POPRAVEK: Pridobimo sporočilo na varen način
+    # Pridobimo sporočilo na varen način (kot smo prej popravili)
     msg_obj = update.effective_message
-    if not msg_obj:
-        return # Če ni sporočila, ne moremo odgovoriti
-
-    if not context.args:
-        await msg_obj.reply_text("❌ Manjka URL!")
+    if not msg_obj or not context.args:
         return
 
-    url = context.args[0]
+
+    raw_url = context.args[0]
+    fixed_url = utils.fix_avtonet_url(raw_url) # "Operemo" URL
+
+
     t_id = update.effective_user.id
     
+    # 1. Preveri limite z uporabo fixed_url
     user_info = db.get_user_subscription_info(t_id)
     if not user_info:
-        await msg_obj.reply_text("❌ Profil ni najden. Uporabi /start.")
+        await msg_obj.reply_text("Nisi registriran. Uporabi /start.")
         return
 
     if user_info['current_url_count'] >= user_info['max_urls']:
         await msg_obj.reply_text(f"🚫 Limit dosežen ({user_info['max_urls']} URL)!")
         return
 
-    # 1. Dodajanje v bazo
-    status, new_url_id = db.add_search_url(t_id, url)
+    # 2. Dodajanje fixed_url v bazo
+    status, new_url_id = db.add_search_url(t_id, fixed_url)
 
     if status == "exists":
         await msg_obj.reply_text("ℹ️ Temu URL-ju že slediš.")
         return
     elif status is True:
-        # TUKAJ JE BILA NAPAKA - zdaj uporabljamo msg_obj
-        sync_msg = await msg_obj.reply_text("⏳ Povezujem se z Avto.net in sinhroniziram oglase...")
+        sync_msg = await msg_obj.reply_text("⏳ Sinhroniziram oglase...")
         
         try:
             temp_scraper = Scraper(db)
-            pending_data = [{'url_id': new_url_id, 'url': url}]
-            
+            # Scraperju pošljemo fixed_url
+            pending_data = [{'url_id': new_url_id, 'url': fixed_url}]
             await asyncio.to_thread(temp_scraper.run, pending_data)
             
-            await sync_msg.edit_text(
-                "✅ <b>Iskanje dodano in sinhronizirano!</b>\n\n"
-                "Sistem si je zapomnil trenutne oglase. Obvestim te ob novih! 🚀",
-                parse_mode="HTML"
-            )
+            await sync_msg.edit_text("✅ <b>Iskanje dodano!</b> Bot bo javil le nove oglase.", parse_mode="HTML")
         except Exception as e:
-            print(f"Napaka pri syncu: {e}")
-            await sync_msg.edit_text("✅ Iskanje dodano! (Sinhronizacija bo opravljena kmalu).")
-    else:
-        await msg_obj.reply_text("❌ Napaka pri vpisu v bazo.")
+            print(f"Sync Error: {e}")
+            await sync_msg.edit_text("✅ Iskanje dodano!")
 
 
 

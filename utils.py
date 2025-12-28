@@ -1,5 +1,6 @@
 import re
 import json
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 def pocisti_ceno_v_stevilko(raw_cena):
     """Pretvori string cene (npr. '21.980 €oz. 18.016 €') v čisto število (21980)."""
@@ -107,3 +108,33 @@ def extrahiraj_podatke(oglas_div):
                     podatki['motor_podatki'] = v
 
     return podatki
+
+
+
+
+
+def fix_avtonet_url(url):
+    """Samo posodobi obstoječe atribute, ničesar ne dodaja."""
+    # Osnovno čiščenje smeti
+    url = url.strip().strip('<>').replace(' ', '')
+    
+    try:
+        u = urlparse(url)
+        query_params = parse_qs(u.query)
+        
+        # MODIFIKACIJA: Popravimo samo, če ključ že obstaja v URL-ju
+        if 'presort' in query_params:
+            query_params['presort'] = ['3']
+        if 'tipsort' in query_params:
+            query_params['tipsort'] = ['DESC']
+        if 'subSORT' in query_params:
+            query_params['subSORT'] = ['3']
+        if 'subTIPSORT' in query_params:
+            query_params['subTIPSORT'] = ['DESC']
+        if 'stran' in query_params:
+            query_params['stran'] = ['1']
+            
+        new_query = urlencode(query_params, doseq=True)
+        return urlunparse((u.scheme, u.netloc, u.path, u.params, new_query, u.fragment))
+    except:
+        return url
