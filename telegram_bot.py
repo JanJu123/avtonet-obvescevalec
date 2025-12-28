@@ -349,23 +349,35 @@ async def list_users_admin(update: telegram.Update, context: telegram.ext.Contex
         await update.message.reply_text("Baza je prazna.")
         return
 
-    msg = "👥 <b>SEZNAM UPORABNIKOV</b>\n"
-    msg += "━━━━━━━━━━━━━━━━━━\n"
-    msg += "<code>ST | ID | IME | POTEČE</code>\n"
-    msg += "━━━━━━━━━━━━━━━━━━\n"
+    # Sestavimo tabelo
+    # ST (Emoji) | PAKET (6) | ID (11) | IME (15) | POTEČE (10)
+    # Emojije damo na začetek vrstice, ostalo pa v <pre> blok za poravnavo
+    
+    header = f"{'PAKET':<6} | {'ID':<11} | {'IME':<15} | {'POTEČE'}"
+    separator = "-" * (len(header) + 3)
+    
+    rows = []
+    rows.append(f"   {header}") # 3 presledki zaradi emojija spodaj
+    rows.append(f"   {separator}")
 
     for u in users:
-        status = "💎" if u['is_active'] else "❌"
-        # Skrajšamo ime na 8 znakov, da se tabela ne podre
-        name = (u['telegram_name'][:8] + "..") if len(u['telegram_name']) > 8 else u['telegram_name']
-        # Prva črka paketa (B, P, U, V, T)
-        p_type = u['subscription_type'][:1] if u['subscription_type'] else "N"
-        # Samo datum (brez ur), da je krajše
+        status_emoji = "💎" if u['is_active'] else "❌"
+        pkg = (u['subscription_type'] or "NONE").upper()
+        
+        # Polno ime (omejeno na 15 znakov za mobilni zaslon, da se ne lomi)
+        name = u['telegram_name'] if u['telegram_name'] else "Neznan"
+        if len(name) > 15:
+            name = name[:14] + ".."
+            
         expiry = u['subscription_end'].split(" ")[0] if u['subscription_end'] else "---"
         
-        msg += f"{status} {p_type} | <code>{u['telegram_id']}</code> | {name} | {expiry}\n"
+        # Sestavimo vrstico: Emoji + f-string poravnava za ostalo
+        row = f"{status_emoji} {pkg:<6} | {u['telegram_id']:<11} | {name:<15} | {expiry}"
+        rows.append(row)
 
-    # Razdelimo sporočilo, če je predolgo (max 4096 znakov)
+    table_text = "\n".join(rows)
+    msg = f"👥 <b>SEZNAM UPORABNIKOV</b>\n\n<pre>{table_text}</pre>"
+
     if len(msg) > 4000:
         for x in range(0, len(msg), 4000):
             await update.message.reply_text(msg[x:x+4000], parse_mode="HTML")
@@ -768,13 +780,13 @@ async def post_init(application: telegram.ext.Application) -> None:
     from config import ADMIN_ID
     # 1. Ukazi za navadne uporabnike
     user_commands = [
-        BotCommand("start", "🚀 Začetek in registracija"),
-        BotCommand("add_url", "➕ Dodaj nov URL"),
-        BotCommand("list", "📋 Moja iskanja"),
-        BotCommand("remove_url", "🗑️ Izbriši URL"),
-        BotCommand("info", "ℹ️ Moj profil in status"),
-        BotCommand("help", "📖 Navodila za uporabo"),
-        BotCommand("packages", "💎 Cenik paketov")
+        BotCommand("start", " Začetek in registracija"),
+        BotCommand("add_url", " Dodaj nov URL"),
+        BotCommand("list", " Moja iskanja"),
+        BotCommand("remove_url", " Izbriši URL"),
+        BotCommand("info", "ℹ Moj profil in status"),
+        BotCommand("help", " Navodila za uporabo"),
+        BotCommand("packages", " Cenik paketov")
     ]
     await application.bot.set_my_commands(user_commands, scope=BotCommandScopeDefault())
 
