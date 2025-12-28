@@ -772,6 +772,57 @@ async def server_status_command(update: telegram.Update, context: telegram.ext.C
     await update.message.reply_text(msg, parse_mode="HTML")
 
 
+async def add_url_user_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    from config import ADMIN_ID
+    from scraper import Scraper
+    import utils
+    
+    # 1. Preverba Admina
+    if str(update.effective_user.id) != str(ADMIN_ID): return
+
+    try:
+        # Ukaz: /add_url_user 12345678 https://www.avto.net/...
+        if len(context.args) < 2:
+            raise ValueError
+
+        target_id = context.args[0]
+        raw_url = context.args[1]
+
+        # 2. Čiščenje URL-ja
+        fixed_url = utils.fix_avtonet_url(raw_url)
+
+        # 3. Dodajanje v bazo (uporabimo tvojo obstoječo metodo)
+        status, new_url_id = db.add_search_url(target_id, fixed_url)
+
+        if status == "exists":
+            await update.message.reply_text("ℹ️ Uporabnik temu URL-ju že sledi.")
+            return
+        
+        if status is True:
+            # 4. Tiha sinhronizacija na VPS (da diler ne dobi 50 sporočil takoj)
+            temp_scraper = Scraper(db)
+            pending_data = [{'url_id': new_url_id, 'url': fixed_url, 'telegram_name': f"User_{target_id}"}]
+            await asyncio.to_thread(temp_scraper.run, pending_data)
+
+            # 5. Obvestilo ADMINU
+            await update.message.reply_text(f"✅ URL uspešno dodan uporabniku <code>{target_id}</code> in sinhroniziran.", parse_mode="HTML")
+            
+            # 6. Obvestilo UPORABNIKU (da vidi, da si mu zrihtal)
+            try:
+                await context.bot.send_message(
+                    chat_id=target_id, 
+                    text="🛠️ <b>ADMIN SERVIS:</b>\nSkrbnik ti je pravkar dodal novo iskanje. Bot že išče nove oglase!",
+                    parse_mode="HTML"
+                )
+            except: pass
+            
+            db.log_user_activity(ADMIN_ID, "/add_url_user", f"Dodal URL ID {new_url_id} uporabniku {target_id}")
+
+    except Exception as e:
+        await update.message.reply_text("❌ <b>Napaka!</b>\nUporaba: <code>/add_url_user ID URL</code>", parse_mode="HTML")
+
+
+
 async def error(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     print(f"Update {update} caused error {context.error}")
 
@@ -802,6 +853,8 @@ async def post_init(application: telegram.ext.Application) -> None:
         BotCommand("check_user", "🔍 Diagnoza uporabnika (ID)"),
         BotCommand("activate", "🚀 Aktiviraj (ID PAKET DNI)"),
         BotCommand("deactivate", "🚫 Deaktiviraj (ID)"),
+        BotCommand("add_url_user", "➕ Dodaj URL drugemu uporabniku (ID URL)"),
+        BotCommand("send", "✉️ Pošlji direktno sporočilo (ID TEKST)"),
         BotCommand("logs", "📜 Zadnje aktivnosti"),
         BotCommand("broadcast", "📢 Pošlji vsem obvestilo")
     ]
@@ -815,6 +868,46 @@ async def post_init(application: telegram.ext.Application) -> None:
     except Exception as e:
         print(f"⚠️ Napaka pri nastavljanju admin ukazov: {e}")
 
+
+async def send_dm_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    from config import ADMIN_ID
+    # Preverimo, če si to ti
+    if str(update.effective_user.id) != str(ADMIN_ID): 
+        return
+
+    try:
+        # Pričakovan format: /send 12345678 Živjo, kako ti služi bot?
+        if len(context.args) < 2:
+            raise ValueError("Manjkajo podatki")
+
+        target_id = context.args[0]
+        text = " ".join(context.args[1:])
+        
+        # --- GUMB ZA ODGOVOR ---
+        # Zamenjaj 'JanJu_123' s svojim dejanskim Telegram username-om (brez @)
+        keyboard = [[InlineKeyboardButton("💬 Piši Janu (Admin)", url="https://t.me/JanJu_123")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        full_msg = (
+            "✉️ <b>SPOROČILO SKRBNIKA</b>\n"
+            "━━━━━━━━━━━━━━━━━━\n\n"
+            f"{text}\n\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "<i>Če imaš vprašanje, klikni spodnji gumb:</i>"
+        )
+        
+        await context.bot.send_message(
+            chat_id=target_id, 
+            text=full_msg, 
+            parse_mode="HTML",
+            reply_markup=reply_markup
+        )
+        
+        await update.message.reply_text(f"✅ Sporočilo uspešno poslano uporabniku <code>{target_id}</code>.", parse_mode="HTML")
+        db.log_user_activity(update.effective_user.id, "/send", f"Poslal sporočilo ID-ju: {target_id}")
+
+    except Exception as e:
+        await update.message.reply_text("❌ <b>Napaka pri pošiljanju!</b>\nUporaba: <code>/send ID SPOROČILO</code>", parse_mode="HTML")
 
 
 
