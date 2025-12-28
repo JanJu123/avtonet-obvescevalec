@@ -262,10 +262,13 @@ async def info_command(update: telegram.Update, context: telegram.ext.ContextTyp
     await update.message.reply_text(msg, parse_mode="HTML", reply_markup=reply_markup)
 
 
-
-
 async def help_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
-    """Navodila za uporabo bota."""
+    """Navodila za uporabo bota. Deluje na ukaz in na gumb."""
+    # Pridobimo sporočilo, na katerega odgovorimo (ne glede na to ali je gumb ali tekst)
+    target_msg = update.effective_message
+    if not target_msg:
+        return
+
     msg = (
         "<b>📖 NAVODILA ZA UPORABO</b>\n\n"
         "1️⃣ <b>Pripravi iskanje:</b>\n"
@@ -279,17 +282,23 @@ async def help_command(update: telegram.Update, context: telegram.ext.ContextTyp
         "Vpiši: <code>/add_url tvoj_link</code>\n\n"
         "🚀 <b>In to je to!</b> Bot te bo obvestil takoj, ko AI zazna nov oglas.\n\n"
         "<b>SEZNAM UKAZOV:</b>\n"
-        "• `/list` - Pregled in status tvojih iskanj\n"
-        "• `/remove_url ID` - Izbris iskanja\n"
-        "• `/info` - Status tvojega profila\n"
-        "• `/packages` - Pregled paketov"
+        "• <code>/list</code> - Pregled in status tvojih iskanj\n"
+        "• <code>/remove_url ID</code> - Izbris iskanja\n"
+        "• <code>/info</code> - Status tvojega profila\n"
+        "• <code>/packages</code> - Pregled paketov"
     )
 
-    await update.message.reply_text(msg, parse_mode="HTML", disable_web_page_preview=True)
+    await target_msg.reply_text(msg, parse_mode="HTML", disable_web_page_preview=True)
+
 
 async def packages_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    """Prikaže prodajni meni s paketi. Deluje na ukaz in na gumb."""
     from config import SUBSCRIPTION_PACKAGES
+    
+    target_msg = update.effective_message
     user_id = update.effective_user.id
+    if not target_msg:
+        return
     
     msg = "<b>📦 RAZPOLOŽLJIVI PAKETI</b>\n\n"
     
@@ -323,11 +332,9 @@ async def packages_command(update: telegram.Update, context: telegram.ext.Contex
     msg += f"🆔 <b>Tvoj ID za aktivacijo:</b> <code>{user_id}</code>\n"
     msg += "<i>(Klikni na številko zgoraj, da jo kopiraš)</i>\n\n"
     
-    # Tukaj vstavi svoj pravi link do Telegram profila
     msg += '💳 <b>Za nakup piši adminu:</b> <a href="https://t.me/JanJu_123">Jan Jurhar</a>'
     
-    await update.message.reply_text(msg, parse_mode="HTML", disable_web_page_preview=True)
-
+    await target_msg.reply_text(msg, parse_mode="HTML", disable_web_page_preview=True)
 
 
 
@@ -858,6 +865,23 @@ async def add_url_user_command(update: telegram.Update, context: telegram.ext.Co
 
     except Exception as e:
         await update.message.reply_text("❌ <b>Napaka!</b>\nUporaba: <code>/add_url_user ID URL</code>", parse_mode="HTML")
+
+
+
+async def button_callback_handler(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    """Upravlja klike na gumbe pod sporočili."""
+    query = update.callback_query
+    
+    # ZELO POMEMBNO: Vedno odgovorimo na query, da Telegram odstrani "loading" animacijo na gumbu
+    await query.answer()
+
+    if query.data == 'help_cmd':
+        # Pokličemo funkcijo za pomoč
+        await help_command(update, context)
+    
+    elif query.data == 'packages_cmd':
+        # Pokličemo funkcijo za pakete
+        await packages_command(update, context)
 
 
 

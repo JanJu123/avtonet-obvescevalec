@@ -4,10 +4,13 @@ import telegram.ext
 from database import Database
 from scraper import Scraper
 from data_manager import DataManager
+from telegram.ext import CallbackQueryHandler
+
 from telegram_bot import start_command, list_command, add_url_command, remove_url_command, info_command, activate_user, \
     deactivate_user, admin_stats_command, admin_help_command, broadcast_command, list_users_admin, admin_logs_command, \
     health_command, check_user_command, proxy_stats_command, packages_command, help_command, post_init, server_status_command, \
-    admin_overview_command, send_dm_command, add_url_user_command
+    admin_overview_command, send_dm_command, add_url_user_command, button_callback_handler
+
 from dotenv import load_dotenv
 import os
 import datetime
@@ -221,6 +224,8 @@ def main():
 
     application.add_handler(telegram.ext.CommandHandler("help", help_command))
     application.add_handler(telegram.ext.CommandHandler("packages", packages_command))
+
+    application.add_handler(CallbackQueryHandler(button_callback_handler))
 
     # Adming commands
         # Primer: /activate 12345678 paid 30  ALI  /activate 12345678 trial 7
