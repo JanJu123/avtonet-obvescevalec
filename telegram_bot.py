@@ -342,6 +342,7 @@ async def broadcast_command(update: telegram.Update, context: telegram.ext.Conte
 
     await update.message.reply_text(f"✅ Sporočilo poslano {poslano} uporabnikom.")
 
+
 async def list_users_admin(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     from main import ADMIN_ID
     if str(update.effective_user.id) != str(ADMIN_ID): return
@@ -351,47 +352,55 @@ async def list_users_admin(update: telegram.Update, context: telegram.ext.Contex
         await update.message.reply_text("Baza je prazna.")
         return
 
-    # DEFINICIJA ŠIRIN ZA ODLIČNO PORAVNAVO
-    w_pkg = 6   # ULTRA, PRO...
-    w_id = 11   # Telegram ID
-    w_name = 10 # Ime
-    w_hnd = 12  # @Handle
+    # Definiramo širine stolpcev za monospace pisavo
+    # Ker so emojiji široki, bomo uporabili fiksne presledke
+    w_pkg = 5   # BAS, PRO, ULT
+    w_id = 10   # ID
+    w_name = 10 # IME
+    w_hnd = 10  # HANDLE
 
-    # Glava (napišemo jo posebej, da veš kateri stolpec je kateri)
-    header = f"{'PAKET':<{w_pkg}} | {'ID':<{w_id}} | {'IME':<{w_name}} | {'@HANDLE':<{w_hnd}} | {'POTEČE'}"
+    # Sestavimo GLAVO tabele
+    # Dodamo 3 presledke na začetku, da se ujema z emoji-jem spodaj
+    header = f"   {'PKG':<{w_pkg}} | {'ID':<{w_id}} | {'IME':<{w_name}} | {'HANDLE':<{w_hnd}} | {'EXP'}"
+    separator = "-" * len(header)
     
-    msg = "👥 <b>ADMIN NADZORNA PLOŠČA</b>\n"
-    msg += f"<code>{header}</code>\n"
-    msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    table_rows = [header, separator]
 
     for row in users:
-        u = dict(row) # Pretvorba v dict za .get()
+        u = dict(row)
         
-        # 1. Izbira emojija
-        status_emoji = "💎" if u['is_active'] else "❌"
+        # Emoji status
+        st = "💎" if u['is_active'] else "❌"
         
-        # 2. Priprava podatkov
-        pkg = (u['subscription_type'] or "NONE").upper()
+        # Krajša imena paketov za boljšo poravnavo
+        pkg_map = {"TRIAL": "TRI", "BASIC": "BAS", "PRO": "PRO", "ULTRA": "ULT", "VIP": "VIP", "NONE": "---"}
+        pkg = pkg_map.get(u['subscription_type'].upper(), "---")
+        
         uid = str(u['telegram_id'])
         
-        # Ime (skrajšamo na w_name)
+        # Ime (skrajšamo na 10)
         name = u['telegram_name'] or "Neznan"
-        if len(name) > w_name:
-            name = name[:w_name-1] + "."
-            
-        # Handle (skrajšamo na w_hnd)
-        hnd = f"@{u['telegram_username']}" if u.get('telegram_username') else "Brez@"
-        if len(hnd) > w_hnd:
-            hnd = hnd[:w_hnd-1] + "."
-            
-        # Datum
-        exp = u['subscription_end'].split(" ")[0] if u['subscription_end'] else "---"
-
-        # 3. Sestava vrstice s f-string poravnavo
-        # Vse zapremo v <code>, da je celotna vrstica klikljiva za kopiranje
-        row_text = f"{pkg:<{w_pkg}} | {uid:<{w_id}} | {name:<{w_name}} | {hnd:<{w_hnd}} | {exp}"
+        if len(name) > w_name: name = name[:w_name-1] + "."
         
-        msg += f"{status_emoji} <code>{row_text}</code>\n"
+        # Handle (skrajšamo na 10)
+        hnd = u.get('telegram_username') or "---"
+        if len(hnd) > w_hnd: hnd = hnd[:w_hnd-1] + "."
+        
+        # Datum (samo DD.MM, da prihranimo prostor)
+        exp = "---"
+        if u['subscription_end']:
+            d = u['subscription_end'].split(".")[0]
+            m = u['subscription_end'].split(".")[1]
+            exp = f"{d}.{m}"
+
+        # Sestava vrstice - Emojiji so zunaj f-stringa za stabilnost
+        line = f"{st} {pkg:<{w_pkg}} | {uid:<{w_id}} | {name:<{w_name}} | {hnd:<{w_hnd}} | {exp}"
+        table_rows.append(line)
+
+    # VSE združimo v en sam <pre> blok
+    # To prepreči prelamljanje in omogoči horizontalni scroll
+    final_table = "\n".join(table_rows)
+    msg = f"👥 <b>ADMIN DASHBOARD</b>\n\n<pre>{final_table}</pre>"
 
     await update.message.reply_text(msg, parse_mode="HTML")
     
