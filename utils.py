@@ -1,6 +1,6 @@
 import re
 import json
-from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse, quote, unquote
 
 def pocisti_ceno_v_stevilko(raw_cena):
     """Pretvori string cene (npr. '21.980 €oz. 18.016 €') v čisto število (21980)."""
@@ -114,27 +114,45 @@ def extrahiraj_podatke(oglas_div):
 
 
 def fix_avtonet_url(url):
-    """Samo posodobi obstoječe atribute, ničesar ne dodaja."""
-    # Osnovno čiščenje smeti
+    """
+    Ultimativna pralnica: skrajša link za 90%, popravi slovenske znake 
+    in prepreči Error 005.
+    """
+    # 1. Osnovno čiščenje zunanjih smeti
     url = url.strip().strip('<>').replace(' ', '')
     
     try:
+        # 2. Dekodiramo vse %8A in podobne v normalne črke (Š, Č, Ž)
+        # Uporabimo latin-1, da ulovimo Avto.net-ove stare znake
+        url = unquote(url, encoding='latin-1')
+        
         u = urlparse(url)
         query_params = parse_qs(u.query)
         
-        # MODIFIKACIJA: Popravimo samo, če ključ že obstaja v URL-ju
-        if 'presort' in query_params:
-            query_params['presort'] = ['3']
-        if 'tipsort' in query_params:
-            query_params['tipsort'] = ['DESC']
-        if 'subSORT' in query_params:
-            query_params['subSORT'] = ['3']
-        if 'subTIPSORT' in query_params:
-            query_params['subTIPSORT'] = ['DESC']
-        if 'stran' in query_params:
-            query_params['stran'] = ['1']
+        # 3. OČISTIMO VSE PRAZNE IN NEPOTREBNE PARAMETRE
+        # Obdržimo samo tisto, kar dejansko ima vrednost
+        clean_params = {}
+        for k, v in query_params.items():
+            val = v[0].strip()
+            # Prazne vrednosti ali privzete ničle (razen cene/letnika) popolnoma odstranimo
+            if val == "" or val == "0" and k not in ['cenaMin', 'cenaMax', 'letnikMin', 'letnikMax']:
+                continue
+            # Odstranimo vse tiste dolge EQ1, EQ2... ki so na 1000000000
+            if k.startswith('EQ') and val == "1000000000":
+                continue
             
-        new_query = urlencode(query_params, doseq=True)
-        return urlunparse((u.scheme, u.netloc, u.path, u.params, new_query, u.fragment))
-    except:
+            clean_params[k] = [val]
+
+        # 4. PRISILIMO SORTIRANJE (Vedno)
+        clean_params['presort'] = ['3']
+        clean_params['tipsort'] = ['DESC']
+        clean_params['stran'] = ['1']
+        
+        # 5. Sestavimo URL nazaj z UTF-8 kodiranjem (varni linki)
+        new_query = urlencode(clean_params, doseq=True)
+        fixed_url = urlunparse((u.scheme, u.netloc, u.path, u.params, new_query, u.fragment))
+        
+        return fixed_url
+    except Exception as e:
+        print(f"Error fix_url: {e}")
         return url
