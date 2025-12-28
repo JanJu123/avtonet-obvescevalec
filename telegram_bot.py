@@ -211,42 +211,55 @@ async def list_command(update: telegram.Update, context: telegram.ext.ContextTyp
 
 
 async def info_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user
-    user = update.effective_user.id
-    
-    db.register_user(user.id, user.first_name, user.username)
+    # 1. Pridobimo CELOTEN objekt uporabnika
+    user_obj = update.effective_user
+    if not user_obj:
+        return
 
-    # Pridobimo vse podatke iz posodobljene get_user funkcije
-    user_data = db.get_user(user_id)
+    # 2. Shranimo ID v ločeno spremenljivko za lažje delo
+    t_id = user_obj.id
+
+    # 3. OSVEŽIMO PODATKE V BAZI (Tukaj je bila napaka)
+    # user_obj.id je številka, user_obj.first_name je besedilo, user_obj.username je @handle
+    db.register_user(t_id, user_obj.first_name, user_obj.username)
     
-    # Pridobimo statistiko (poskrbi, da ta funkcija v DB uporablja 'start of day' ali '-1 day')
-    pregledi_24h = db.get_user_stats_24h(user_id)
+    # 4. Pridobimo podatke za izpis
+    user_data = db.get_user(t_id)
+    pregledi_24h = db.get_user_stats_24h(t_id)
     
     if not user_data:
         await update.message.reply_text("Nisi registriran. Uporabi /start.")
         return
 
-    # Dinamična barva/status glede na aktivnost
-    status_icon = "🟢" if user_data['is_active'] else "🔴"
+    status_icon = "🟢" if user_data.get('is_active') else "🔴"
 
     msg = (
         "ℹ️ <b>INFORMACIJE O PROFILU</b>\n\n"
-        f"👤 <b>Uporabnik:</b> <code>{user_id}</code>\n"
-        f"📦 <b>Paket:</b> <code>{user_data['subscription_type']}</code>\n"
-        f"✅ <b>Status:</b> {status_icon} {'Aktiven' if user_data['is_active'] else 'Neaktiven'}\n"
-        f"⏳ <b>Veljavnost do:</b> <code>{user_data['subscription_end']}</code>\n\n"
+        f"👤 <b>Uporabnik:</b> <code>{t_id}</code>\n"
+        f"📦 <b>Paket:</b> <code>{user_data.get('subscription_type', 'NONE')}</code>\n"
+        f"✅ <b>Status:</b> {status_icon} {'Aktiven' if user_data.get('is_active') else 'Neaktiven'}\n"
+        f"⏳ <b>Veljavnost do:</b> <code>{user_data.get('subscription_end', '---')}</code>\n\n"
         f"📊 <b>MOJI LIMITI:</b>\n"
-        f"• URL Limit: <code>{user_data['max_urls']}</code> iskanj\n"
-        f"• Interval: <code>{user_data['scan_interval']} min</code>\n\n"
+        f"• URL Limit: <code>{user_data.get('max_urls', 1)}</code> iskanj\n"
+        f"• Interval: <code>{user_data.get('scan_interval', 15)} min</code>\n\n"
         f"----------------------------------\n"
         f"🔍 <b>Skeniranj zate (24h):</b> <code>{pregledi_24h}</code>\n"
         f"----------------------------------\n"
         "<i>Številka zgoraj prikazuje, kolikokrat smo zate danes obiskali Avto.net.</i>"
     )
     
-    db.log_user_activity(user_id, "/info", "Pregled profila")
+    # Gumbi
+    keyboard = [
+        [
+            InlineKeyboardButton("📖 Pomoč", callback_data='help_cmd'),
+            InlineKeyboardButton("💎 Paketi", callback_data='packages_cmd')
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    db.log_user_activity(t_id, "/info", "Pregled profila (osvežitev)")
     
-    await update.message.reply_text(msg, parse_mode="HTML")
+    await update.message.reply_text(msg, parse_mode="HTML", reply_markup=reply_markup)
 
 
 
