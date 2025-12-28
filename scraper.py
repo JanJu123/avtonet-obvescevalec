@@ -139,13 +139,12 @@ class Scraper:
         return f"AVTO: {naziv} | PODATKI: {podatki} | CENA: {cena}"
 
     def _get_new_ads_raw(self, html_content):
-        """Prepozna vse vrstice, preskoči TOP ponudbe in vzame max 5 novih."""
+        """Prepozna vse vrstice, preskoči TOP ponudbe in vzame max 5 novih s popravljenimi linki slik."""
         soup = BeautifulSoup(html_content, 'html.parser')
         rows = soup.find_all('div', class_='GO-Results-Row')
         
         new_ads_list = []
         for row in rows:
-            # 1. Preskoči, če je sponzoriran oglas (TOP ponudba)
             if self._is_top_ponudba(row):
                 continue
 
@@ -157,10 +156,18 @@ class Scraper:
             if not match: continue
             content_id = match.group(1)
 
-            # 2. Preveri v bazi, če je oglas nov
             if self.db.is_ad_new(content_id):
                 img_tag = row.find('img')
                 img_url = img_tag.get('data-src') or img_tag.get('src') if img_tag else None
+                
+                # --- POPRAVEK ZA SLIKO ---
+                if img_url:
+                    img_url = img_url.strip()
+                    if img_url.startswith('//'):
+                        img_url = 'https:' + img_url
+                    elif img_url.startswith('/'):
+                        img_url = 'https://www.avto.net' + img_url
+                # -------------------------
                 
                 new_ads_list.append({
                     "id": content_id,
@@ -170,9 +177,7 @@ class Scraper:
                     "slika_url": img_url
                 })
             
-            # 3. LIMIT: Vzemi največ 5 oglasov na cikel, da prihraniš AI in ne spamaš
             if len(new_ads_list) >= 5:
-                print(f"[SCRAPER] Dosežena omejitev 5 novih oglasov. Ostali pridejo na vrsto kasneje.")
                 break
                 
         return new_ads_list

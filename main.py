@@ -62,10 +62,8 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     scraper = Scraper(DataBase=db)
     manager = DataManager(db)
 
-    # 1. Zagon scraperja
     await asyncio.to_thread(scraper.run, pending_urls) 
     
-    # --- NOVO: MO ST ZA POKVARJENE LINKU ---
     failed_ones = db.get_newly_failed_urls()
     for f in failed_ones:
         t_id = f['telegram_id']
@@ -79,22 +77,13 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
             "Preveri link in ga dodaj ponovno z <code>/add_url</code>."
         )
         
-        admin_alert = f"🚨 <b>POKVARJEN LINK:</b>\nUporabnik: {u_name} ({t_id})\nURL ID: {u_id}\nStatus: Ustavljeno."
-        
         try:
-            # Pošljemo obvestila
             await context.bot.send_message(chat_id=t_id, text=user_msg, parse_mode="HTML")
-            await context.bot.send_message(chat_id=ADMIN_ID, text=admin_alert, parse_mode="HTML")
-            
-            # KLJUČNI POPRAVEK: 
-            # Povečamo fail_count na 4, da se ta IF ne sproži več v naslednjem ciklu!
+            await context.bot.send_message(chat_id=ADMIN_ID, text=f"🚨 POKVARJEN LINK: {u_name} ({t_id})", parse_mode="HTML")
             db.update_url_fail_count(u_id) 
-            
-            print(f"{B_YELLOW}[{get_time()}] 📢 Uporabnik {u_name} obveščen. URL {u_id} utišan.{B_END}")
         except:
             pass
 
-    # 2. Preverjanje novih oglasov (tvoja stara logika se nadaljuje)
     novi_oglasi = manager.check_new_offers(filter_url_ids=pending_ids)
     
     if not novi_oglasi:
@@ -109,15 +98,34 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
         slika = oglas.get("slika_url")
 
         try:
-            if slika:
-                await context.bot.send_photo(chat_id=chat_id, photo=slika, caption=tekst, parse_mode="HTML")
-            else:
-                await context.bot.send_message(chat_id=chat_id, text=tekst, parse_mode="HTML", disable_web_page_preview=False)
+            # --- VARNO POŠILJANJE S FALLBACKOM ---
+            success = False
+            if slika and slika.startswith('http'):
+                try:
+                    await context.bot.send_photo(
+                        chat_id=chat_id, 
+                        photo=slika, 
+                        caption=tekst, 
+                        parse_mode="HTML"
+                    )
+                    success = True
+                except Exception as img_err:
+                    print(f"⚠️ Napaka pri sliki (ID:{oglas['content_id']}): {img_err}. Poskušam samo tekst...")
+            
+            # Če slike ni ali pa je pošiljanje slike spodletelo
+            if not success:
+                await context.bot.send_message(
+                    chat_id=chat_id, 
+                    text=tekst, 
+                    parse_mode="HTML", 
+                    disable_web_page_preview=False
+                )
             
             db.add_sent_ad(chat_id, oglas['content_id'])
             await asyncio.sleep(0.5) 
+            
         except Exception as e:
-            print(f"[{get_time()}] ❌ Napaka pri pošiljanju uporabniku {chat_id}: {e}")
+            print(f"[{get_time()}] ❌ Kritična napaka pri pošiljanju uporabniku {chat_id}: {e}")
 
     print(f"{B_GREEN}[{get_time()}] --- [ CIKEL KONČAN: Uspešno poslano ] ---{B_END}")
 

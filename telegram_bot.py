@@ -546,7 +546,7 @@ async def admin_stats_command(update: telegram.Update, context: telegram.ext.Con
         "━━━━━━━━━━━━━━━━━━\n\n"
         "📅 <b>DANES (od 00:00):</b>\n"
         f"🌐 Skupaj requestov: <b>{req_danes}</b>\n"
-        f"💰 Realen strošek: <b>{cost_danes:.4f}€</b>\n"
+        f"💰 Realen strošek: <b>{cost_danes:.2f}€</b>\n"
         f"📉 Cena / 1000 skenov: <b>{cost_per_1k:.2f}€</b>\n\n"
         "👤 <b>PORABA PO UPORABNIKIH (Danes):</b>\n"
     )
