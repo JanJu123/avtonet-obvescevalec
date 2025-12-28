@@ -115,8 +115,13 @@ def fix_avtonet_url(url):
     Popravi kodiranje (ŠČŽ) z uporabo cp1250, ki ga Avto.net razume.
     Odstrani vse presledke in popravi sortiranje, če obstaja.
     """
-    # 1. Osnovno čiščenje smeti in vseh presledkov
-    url = url.strip().strip('<>').replace(' ', '').replace('%20', '')
+    # 1. Osnovno čiščenje smeti (oklepaji in presledki na začetku/koncu)
+    url = url.strip().strip('<>')
+
+    # 2. VARNOSTNI POPRAVEK: Namesto da presledke izbrišemo, 
+    # jih spremenimo v %20 (pravilen URL format).
+    # To bo preprečilo "infinity loop" in hkrati ohranilo delujoče filtre.
+    url = url.replace(' ', '%20')
 
     try:
         # 2. Razstavimo URL
