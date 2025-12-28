@@ -27,7 +27,7 @@ async def start_command(update: telegram.Update, context: telegram.ext.ContextTy
     user = update.effective_user
     
     # 1. Poskusimo registrirati uporabnika
-    is_new = db.register_user(user.id, user.first_name)
+    is_new = db.register_user(user.id, user.first_name, user.username)
 
     if is_new:
         # --- OBVESTILO ZA ADMINA (Tate) ---
@@ -339,7 +339,6 @@ async def broadcast_command(update: telegram.Update, context: telegram.ext.Conte
 
     await update.message.reply_text(f"✅ Sporočilo poslano {poslano} uporabnikom.")
 
-
 async def list_users_admin(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     from main import ADMIN_ID
     if str(update.effective_user.id) != str(ADMIN_ID): return
@@ -349,40 +348,42 @@ async def list_users_admin(update: telegram.Update, context: telegram.ext.Contex
         await update.message.reply_text("Baza je prazna.")
         return
 
-    # Sestavimo tabelo
-    # ST (Emoji) | PAKET (6) | ID (11) | IME (15) | POTEČE (10)
-    # Emojije damo na začetek vrstice, ostalo pa v <pre> blok za poravnavo
-    
-    header = f"{'PAKET':<6} | {'ID':<11} | {'IME':<15} | {'POTEČE'}"
-    separator = "-" * (len(header) + 3)
-    
-    rows = []
-    rows.append(f"   {header}") # 3 presledki zaradi emojija spodaj
-    rows.append(f"   {separator}")
+    # Glava sporočila
+    msg = "👥 <b>ADMIN NADZORNA PLOŠČA</b>\n"
+    msg += "━━━━━━━━━━━━━━━━━━\n"
+    msg += "<code>ST | PAKET  | ID (copy)   | @HANDLE (copy)</code>\n"
+    msg += "━━━━━━━━━━━━━━━━━━\n\n"
 
     for u in users:
-        status_emoji = "💎" if u['is_active'] else "❌"
+        # 1. Status Emoji
+        st = "💎" if u['is_active'] else "❌"
+        
+        # 2. Paket (poravnan na 6 mest)
         pkg = (u['subscription_type'] or "NONE").upper()
+        pkg_display = f"<b>{pkg:<6}</b>"
         
-        # Polno ime (omejeno na 15 znakov za mobilni zaslon, da se ne lomi)
-        name = u['telegram_name'] if u['telegram_name'] else "Neznan"
-        if len(name) > 15:
-            name = name[:14] + ".."
-            
-        expiry = u['subscription_end'].split(" ")[0] if u['subscription_end'] else "---"
+        # 3. ID (v <code> tagu, da se skopira na klik)
+        uid = f"<code>{u['telegram_id']}</code>"
         
-        # Sestavimo vrstico: Emoji + f-string poravnava za ostalo
-        row = f"{status_emoji} {pkg:<6} | {u['telegram_id']:<11} | {name:<15} | {expiry}"
-        rows.append(row)
+        # 4. Handle ali Ime (v <code> tagu, da se skopira na klik)
+        raw_handle = u.get('telegram_username')
+        if raw_handle:
+            handle = f"@{raw_handle}"
+        else:
+            handle = u['telegram_name'] or "Neznan"
+        
+        # Skrajšamo, da se vrstica na mobilcu ne prelomi
+        if len(handle) > 12:
+            handle = handle[:10] + ".."
+        
+        u_copy = f"<code>{handle}</code>"
+        
+        # Sestavimo vrstico
+        msg += f"{st} | {pkg_display} | {uid} | {u_copy}\n"
+        msg += "──────────────────\n"
 
-    table_text = "\n".join(rows)
-    msg = f"👥 <b>SEZNAM UPORABNIKOV</b>\n\n<pre>{table_text}</pre>"
-
-    if len(msg) > 4000:
-        for x in range(0, len(msg), 4000):
-            await update.message.reply_text(msg[x:x+4000], parse_mode="HTML")
-    else:
-        await update.message.reply_text(msg, parse_mode="HTML")
+    await update.message.reply_text(msg, parse_mode="HTML")
+    
 
 async def activate_user(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     from config import ADMIN_ID, SUBSCRIPTION_PACKAGES

@@ -21,6 +21,7 @@ class Database:
         CREATE TABLE IF NOT EXISTS Users (
             telegram_id INTEGER UNIQUE NOT NULL,
             telegram_name TEXT,
+            telegram_username TEXT,
             subscription_type TEXT DEFAULT 'TRAIL',
             max_urls INTEGER DEFAULT 1,
             scan_interval INTEGER DEFAULT 15,
@@ -578,31 +579,26 @@ class Database:
         conn.close()
         return res
 
-    def register_user(self, telegram_id, telegram_name):
-        """Registrira novega uporabnika ali posodobi ime obstoječemu."""
+    def register_user(self, telegram_id, telegram_name, telegram_username):
         conn = self.get_connection()
         c = conn.cursor()
-        
-        # Uporabimo 'INSERT OR REPLACE' ali pa preprosto preverimo
+        # Preverimo obstoj
         existing = c.execute("SELECT 1 FROM Users WHERE telegram_id = ?", (telegram_id,)).fetchone()
         
         if not existing:
-            # Nov uporabnik (dobi TRIAL)
             from datetime import datetime, timedelta
             expiry = (datetime.now() + timedelta(days=3)).strftime("%d.%m.%Y %H:%M:%S")
             c.execute("""
-                INSERT INTO Users (telegram_id, telegram_name, subscription_type, max_urls, scan_interval, subscription_end, is_active)
-                VALUES (?, ?, 'TRIAL', 1, 15, ?, 1)
-            """, (telegram_id, telegram_name, expiry))
-            conn.commit()
-            conn.close()
-            return True
+                INSERT INTO Users (telegram_id, telegram_name, telegram_username, subscription_type, max_urls, scan_interval, subscription_end, is_active)
+                VALUES (?, ?, ?, 'TRIAL', 1, 15, ?, 1)
+            """, (telegram_id, telegram_name, telegram_username, expiry))
         else:
-            # Obstoječ uporabnik - posodobimo ime, če se je spremenilo
-            c.execute("UPDATE Users SET telegram_name = ? WHERE telegram_id = ?", (telegram_name, telegram_id))
-            conn.commit()
-            conn.close()
-            return False
+            # Obstoječemu vedno posodobimo ime in handle
+            c.execute("UPDATE Users SET telegram_name = ?, telegram_username = ? WHERE telegram_id = ?", 
+                    (telegram_name, telegram_username, telegram_id))
+        
+        conn.commit()
+        conn.close()
     
 
     def get_user_stats_24h(self, telegram_id):
