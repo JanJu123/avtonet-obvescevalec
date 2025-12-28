@@ -110,34 +110,38 @@ def extrahiraj_podatke(oglas_div):
     return podatki
 
 
-
 def fix_avtonet_url(url):
     """
-    Popravi kodiranje in odstrani presledke, strukturo pa pusti 100% isto.
-    Namenjeno reševanju napake 005 brez brisanja parametrov.
+    Popravi kodiranje (ŠČŽ) z uporabo cp1250, ki ga Avto.net razume.
+    Odstrani vse presledke in popravi sortiranje, če obstaja.
     """
-    # 1. Osnovno čiščenje zunanjih znakov in vseh presledkov v linku
-    # Avto.net v URL-ju ne sme imeti nobenega presledka!
+    # 1. Osnovno čiščenje smeti in vseh presledkov
     url = url.strip().strip('<>').replace(' ', '').replace('%20', '')
 
     try:
-        # 2. Najprej dekodiramo vse, da dobimo čiste slovenske znake (ŠČŽ)
-        # Poskusimo najprej z latin-1 (Avto.net standard)
-        decoded = urllib.parse.unquote(url, encoding='latin-1')
+        # 2. Razstavimo URL
+        u = urllib.parse.urlparse(url)
         
-        # 3. Ročni popravek, če je 'Škoda' slučajno postala 'koda' ali 'koda'
-        if 'koda' in decoded and 'Škoda' not in decoded:
-            decoded = decoded.replace('koda', 'Škoda')
+        # 3. Dekodiramo query parametre
+        # Uporabimo 'cp1250', ker Avto.net uporablja ta standard za ŠČŽ
+        query_params = urllib.parse.parse_qs(u.query, encoding='cp1250')
 
-        # 4. Ponovno zakodiramo v latin-1 (Windows-1250)
-        # To je tisto, kar Avto.net dejansko pričakuje za ŠČŽ
-        u = urllib.parse.urlparse(decoded)
-        query_dict = urllib.parse.parse_qs(u.query)
-        
-        # Ponovno sestavimo query string z latin-1 kodiranjem
-        # safe=':/?&=,' prepreči kodiranje nujnih znakov
-        new_query = urllib.parse.urlencode(query_dict, doseq=True, encoding='latin-1')
-        
+        # 4. Popravimo parametre (če obstajajo), da ostanejo v nujnem formatu
+        if 'presort' in query_params:
+            query_params['presort'] = ['3']
+        if 'tipsort' in query_params:
+            query_params['tipsort'] = ['DESC']
+        if 'subSORT' in query_params:
+            query_params['subSORT'] = ['3']
+        if 'subTIPSORT' in query_params:
+            query_params['subTIPSORT'] = ['DESC']
+        if 'stran' in query_params:
+            query_params['stran'] = ['1']
+
+        # 5. ZAKODIRAMO NAZAJ v 'cp1250'
+        # To bo spremenilo 'Š' v '%8A', kar je edini način, da Avto.net ne vrne Error 005
+        new_query = urllib.parse.urlencode(query_params, doseq=True, encoding='cp1250')
+
         fixed_url = urllib.parse.urlunparse((
             u.scheme,
             u.netloc,
@@ -149,5 +153,6 @@ def fix_avtonet_url(url):
         
         return fixed_url
     except Exception as e:
+        # Če gre karkoli narobe, izpišemo in vrnemo original (da se bot ne ustavi)
         print(f"Error fixing URL encoding: {e}")
         return url
