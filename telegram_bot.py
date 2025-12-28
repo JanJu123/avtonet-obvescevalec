@@ -352,43 +352,61 @@ async def list_users_admin(update: telegram.Update, context: telegram.ext.Contex
         await update.message.reply_text("Baza je prazna.")
         return
 
-    # --- 1. DEL: VIZUALNA TABELA (za pregled) ---
-    w_pkg, w_id, w_name, w_hnd = 4, 10, 10, 10
-    header = f"   {'PKG':<{w_pkg}} | {'ID':<{w_id}} | {'IME':<{w_name}} | {'HANDLE'}"
-    table_rows = [header, "-" * (len(header) + 5)]
+    # Definiramo širine stolpcev za monospace pisavo
+    # Ker so emojiji široki, bomo uporabili fiksne presledke
+    w_pkg = 5   # BAS, PRO, ULT
+    w_id = 10   # ID
+    w_name = 10 # IME
+    w_hnd = 10  # HANDLE
 
-    pkg_map = {"TRIAL": "TRI", "BASIC": "BAS", "PRO": "PRO", "ULTRA": "ULT", "VIP": "VIP", "NONE": "---"}
+    # Sestavimo GLAVO tabele
+    # Dodamo 3 presledke na začetku, da se ujema z emoji-jem spodaj
+    header = f"   {'PKG':<{w_pkg}} | {'ID':<{w_id}} | {'IME':<{w_name}} | {'HANDLE':<{w_hnd}} | {'EXP'}"
+    separator = "-" * len(header)
+    
+    table_rows = [header, separator]
 
     for row in users:
         u = dict(row)
+        
+        # Emoji status
         st = "💎" if u['is_active'] else "❌"
-        pkg = pkg_map.get(u.get('subscription_type', '').upper(), "---")
+        
+        # --- VARNI PREVZEM PAKETA ---
+        pkg_map = {"TRIAL": "TRI", "BASIC": "BAS", "PRO": "PRO", "ULTRA": "ULT", "VIP": "VIP", "NONE": "---"}
+        raw_pkg = u.get('subscription_type')
+        pkg = pkg_map.get(raw_pkg.upper(), "---") if raw_pkg else "---"
+        
         uid = str(u['telegram_id'])
         
+        # Ime (skrajšamo na 10)
         name = u['telegram_name'] or "Neznan"
-        if len(name) > w_name: name = name[:w_name-1] + ".."
+        if len(name) > w_name: name = name[:w_name-1] + "."
         
+        # Handle (skrajšamo na 10)
         hnd = u.get('telegram_username') or "---"
-        if len(hnd) > w_hnd: hnd = hnd[:w_hnd-1] + ".."
+        if len(hnd) > w_hnd: hnd = hnd[:w_hnd-1] + "."
         
-        line = f"{st} {pkg:<{w_pkg}} | {uid:<{w_id}} | {name:<{w_name}} | {hnd}"
+        # Datum (samo DD.MM)
+        exp = "---"
+        if u['subscription_end']:
+            try:
+                parts = u['subscription_end'].split(".")
+                exp = f"{parts[0]}.{parts[1]}"
+            except:
+                exp = "err"
+
+        # Sestava vrstice
+        line = f"{st} {pkg:<{w_pkg}} | {uid:<{w_id}} | {name:<{w_name}} | {hnd:<{w_hnd}} | {exp}"
         table_rows.append(line)
 
-    visual_table = "\n".join(table_rows)
 
-    # --- 2. DEL: HITRO KOPIRANJE (za delo) ---
-    copy_list = "<b>🎯 HITRO KOPIRANJE (Klikni na ID):</b>\n"
-    for row in users:
-        u = dict(row)
-        if not u['is_active']: continue # Pokažemo samo aktivne za hitro delo
-        
-        hnd_display = f"(@{u['telegram_username']})" if u.get('telegram_username') else ""
-        # <code> poskrbi, da se ob kliku skopira samo ID
-        copy_list += f"• {u['telegram_name']} {hnd_display}: <code>{u['telegram_id']}</code>\n"
+    # VSE združimo v en sam <pre> blok
+    # To prepreči prelamljanje in omogoči horizontalni scroll
+    final_table = "\n".join(table_rows)
+    msg = f"👥 <b>ADMIN DASHBOARD</b>\n\n<pre>{final_table}</pre>"
 
-    full_msg = f"👥 <b>ADMIN DASHBOARD</b>\n\n<pre>{visual_table}</pre>\n\n{copy_list}"
-
-    await update.message.reply_text(full_msg, parse_mode="HTML")
+    await update.message.reply_text(msg, parse_mode="HTML")
     
 
 async def activate_user(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
