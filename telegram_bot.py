@@ -352,50 +352,41 @@ async def list_users_admin(update: telegram.Update, context: telegram.ext.Contex
         await update.message.reply_text("Baza je prazna.")
         return
 
-    # --- 1. DEL: VIZUALNA TABELA ---
+    # --- 1. DEL: VIZUALNA TABELA (za pregled) ---
     w_pkg, w_id, w_name, w_hnd = 4, 10, 10, 10
     header = f"   {'PKG':<{w_pkg}} | {'ID':<{w_id}} | {'IME':<{w_name}} | {'HANDLE'}"
     table_rows = [header, "-" * (len(header) + 5)]
 
     pkg_map = {"TRIAL": "TRI", "BASIC": "BAS", "PRO": "PRO", "ULTRA": "ULT", "VIP": "VIP", "NONE": "---"}
 
-    # --- 2. DEL: SEZNAM ZA KOPIRANJE ---
-    copy_list = "\n<b>🎯 HITRO KOPIRANJE (Klikni na ID):</b>\n"
-
     for row in users:
-        u = dict(row) # Spremenimo v dict, da lahko varno beremo
+        u = dict(row)
+        st = "💎" if u['is_active'] else "❌"
+        pkg = pkg_map.get(u.get('subscription_type', '').upper(), "---")
+        uid = str(u['telegram_id'])
         
-        # Emoji status
-        st = "💎" if u.get('is_active') else "❌"
+        name = u['telegram_name'] or "Neznan"
+        if len(name) > w_name: name = name[:w_name-1] + ".."
         
-        # --- VARNO BRANJE PAKETA (Fix za NoneType error) ---
-        raw_pkg = u.get('subscription_type')
-        if raw_pkg is None: raw_pkg = "NONE"
-        pkg = pkg_map.get(raw_pkg.upper(), "---")
+        hnd = u.get('telegram_username') or "---"
+        if len(hnd) > w_hnd: hnd = hnd[:w_hnd-1] + ".."
         
-        uid = str(u.get('telegram_id', '0'))
-        
-        # Ime
-        name = u.get('telegram_name') or "Neznan"
-        if len(name) > w_name: name = name[:w_name-1] + "."
-        
-        # Handle (@username)
-        raw_hnd = u.get('telegram_username')
-        hnd = raw_hnd if raw_hnd else "---"
-        if len(hnd) > w_hnd: hnd = hnd[:w_hnd-1] + "."
-        
-        # Dodamo v tabelo
         line = f"{st} {pkg:<{w_pkg}} | {uid:<{w_id}} | {name:<{w_name}} | {hnd}"
         table_rows.append(line)
 
-        # Dodamo v seznam za kopiranje (samo aktivne)
-        if u.get('is_active'):
-            hnd_info = f" (@{raw_hnd})" if raw_hnd else ""
-            copy_list += f"• {name}{hnd_info}: <code>{uid}</code>\n"
-
-    # Združimo vse v eno sporočilo
     visual_table = "\n".join(table_rows)
-    full_msg = f"👥 <b>ADMIN DASHBOARD</b>\n\n<pre>{visual_table}</pre>\n{copy_list}"
+
+    # --- 2. DEL: HITRO KOPIRANJE (za delo) ---
+    copy_list = "<b>🎯 HITRO KOPIRANJE (Klikni na ID):</b>\n"
+    for row in users:
+        u = dict(row)
+        if not u['is_active']: continue # Pokažemo samo aktivne za hitro delo
+        
+        hnd_display = f"(@{u['telegram_username']})" if u.get('telegram_username') else ""
+        # <code> poskrbi, da se ob kliku skopira samo ID
+        copy_list += f"• {u['telegram_name']} {hnd_display}: <code>{u['telegram_id']}</code>\n"
+
+    full_msg = f"👥 <b>ADMIN DASHBOARD</b>\n\n<pre>{visual_table}</pre>\n\n{copy_list}"
 
     await update.message.reply_text(full_msg, parse_mode="HTML")
     
