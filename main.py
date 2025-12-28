@@ -72,24 +72,25 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
         u_id = f['url_id']
         u_name = f['telegram_name']
         
-        # Obvestilo UPORABNIKU
         user_msg = (
             "⚠️ <b>TEŽAVA Z ISKALNIM LINKOM</b>\n\n"
-            f"Opazili smo, da tvoj link (ID: {u_id}) vztrajno javlja napako. "
-            "Sistem ga je začasno <b>zamrznil</b>, da ne trošimo virov.\n\n"
-            "<b>Kaj storiti?</b>\n"
-            "1. Preveri, če link sploh deluje v brskalniku.\n"
-            "2. Izbriši ga z <code>/remove_url</code> in dodaj ponovno.\n"
-            "3. Če se težava ponovi, piši adminu."
+            f"Opazili smo, da tvoj link (ID: {u_id}) ne deluje pravilno. "
+            "Sistem ga je začasno <b>zamrznil</b>.\n\n"
+            "Preveri link in ga dodaj ponovno z <code>/add_url</code>."
         )
         
-        # Obvestilo ADMINU (Tebi)
-        admin_alert = f"🚨 <b>POKVARJEN LINK:</b>\nUporabnik: {u_name} ({t_id})\nURL ID: {u_id}\nStatus: Avtomatsko ustavljeno."
+        admin_alert = f"🚨 <b>POKVARJEN LINK:</b>\nUporabnik: {u_name} ({t_id})\nURL ID: {u_id}\nStatus: Ustavljeno."
         
         try:
+            # Pošljemo obvestila
             await context.bot.send_message(chat_id=t_id, text=user_msg, parse_mode="HTML")
             await context.bot.send_message(chat_id=ADMIN_ID, text=admin_alert, parse_mode="HTML")
-            print(f"{B_YELLOW}[{get_time()}] 📢 Obveščen uporabnik {u_name} o pokvarjenem linku.{B_END}")
+            
+            # KLJUČNI POPRAVEK: 
+            # Povečamo fail_count na 4, da se ta IF ne sproži več v naslednjem ciklu!
+            db.update_url_fail_count(u_id) 
+            
+            print(f"{B_YELLOW}[{get_time()}] 📢 Uporabnik {u_name} obveščen. URL {u_id} utišan.{B_END}")
         except:
             pass
 
