@@ -924,46 +924,49 @@ class Database:
 
 
     def get_pending_urls(self):
-        """Vrne samo URL-je, ki so znotraj limita uporabnikovega paketa."""
         conn = self.get_connection()
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         
-        # Ta SQL magija oštevilči URL-je vsakega uporabnika. 
-        # Če ima nekdo 17 URL-jev, paket pa mu dovoljuje le 5, 
-        # bo ta poizvedba vrnila le prvih 5 (po datumu dodajanja).
+        # POMEMBNO: u.fail_count mora biti v SELECT delu znotraj RankedTracking!
         query = """
-        WITH RankedTracking AS (
-            SELECT 
-                t.url_id, 
-                u.url, 
-                us.telegram_id,
-                us.telegram_name,
-                us.scan_interval,
-                us.subscription_type,
-                us.is_active,
-                ROW_NUMBER() OVER (PARTITION BY us.telegram_id ORDER BY t.created_at ASC) as url_rank,
-                us.max_urls
-            FROM Tracking t
-            JOIN Urls u ON t.url_id = u.url_id
-            JOIN Users us ON t.telegram_id = us.telegram_id
-            WHERE us.is_active = 1
-        )
-        SELECT url_id, url, telegram_name, MIN(scan_interval) as min_interval,
-            MAX(CASE WHEN subscription_type = 'ULTRA' THEN 1 ELSE 0 END) as has_ultra
-        FROM RankedTracking
-        WHERE url_rank <= max_urls AND u.fail_count < 3
-        GROUP BY url_id
-    """
-        active_urls = c.execute(query).fetchall()
+            WITH RankedTracking AS (
+                SELECT 
+                    t.url_id, 
+                    u.url, 
+                    u.fail_count, -- TUKAJ JE MORAL BITI DODAN
+                    us.telegram_id,
+                    us.telegram_name,
+                    us.scan_interval,
+                    us.subscription_type,
+                    us.is_active,
+                    ROW_NUMBER() OVER (PARTITION BY us.telegram_id ORDER BY t.created_at ASC) as url_rank,
+                    us.max_urls
+                FROM Tracking t
+                JOIN Urls u ON t.url_id = u.url_id
+                JOIN Users us ON t.telegram_id = us.telegram_id
+                WHERE us.is_active = 1
+            )
+            SELECT url_id, url, telegram_name, MIN(scan_interval) as min_interval,
+                MAX(CASE WHEN subscription_type = 'ULTRA' THEN 1 ELSE 0 END) as has_ultra
+            FROM RankedTracking
+            WHERE url_rank <= max_urls 
+            AND fail_count < 3 -- Zdaj bo to delovalo, ker je zgoraj v SELECTu
+            GROUP BY url_id
+        """
         
+        try:
+            active_urls = c.execute(query).fetchall()
+        except Exception as e:
+            print(f"❌ SQL Napaka v get_pending_urls: {e}")
+            return []
+
         pending = []
-        now = datetime.datetime.now()
+        now = datetime.now()
         is_night = 0 <= now.hour < 7
 
         for row in active_urls:
             u_id = row['url_id']
-            # Nočni način: Ultra na 15 min, ostali na 30 min
             if is_night:
                 current_interval = 15 if row['has_ultra'] else 30
             else:
@@ -972,20 +975,18 @@ class Database:
             last_log = c.execute("SELECT timestamp FROM ScraperLogs WHERE url_id = ? AND status_code = 200 ORDER BY id DESC LIMIT 1", (u_id,)).fetchone()
             
             if not last_log:
-                pending.append({'url_id': u_id, 'url': row['url']})
+                pending.append({'url_id': u_id, 'url': row['url'], 'telegram_name': row['telegram_name']})
             else:
                 try:
-                    last_time = datetime.datetime.strptime(last_log['timestamp'], "%d.%m.%Y %H:%M:%S")
+                    last_time = datetime.strptime(last_log['timestamp'], "%d.%m.%Y %H:%M:%S")
                     if (now - last_time).total_seconds() / 60 >= (current_interval - 0.2):
-                        pending.append({'url_id': u_id, 'url': row['url']})
+                        pending.append({'url_id': u_id, 'url': row['url'], 'telegram_name': row['telegram_name']})
                 except:
-                    pending.append({'url_id': u_id, 'url': row['url']})
+                    pending.append({'url_id': u_id, 'url': row['url'], 'telegram_name': row['telegram_name']})
                     
         conn.close()
-        if pending:
-            print(f"[NIGHT-MODE: {'ON' if is_night else 'OFF'}] Na vrsti za skeniranje: {len(pending)} URL-jev.")
-            
         return pending
+
     
     def add_search_url(self, telegram_id, url):
         """Doda URL in vrne (status, url_id)."""

@@ -735,7 +735,7 @@ async def post_init(application: telegram.ext.Application) -> None:
     # 2. Ukazi samo zate (Admin)
     admin_commands = user_commands + [
         BotCommand("admin", "👑 Admin Center (Pomoč)"),
-        BotCommand("overview", "📊 Hitri pregled baze (Ghost/Errors)"),
+        BotCommand("admin_overview", "📊 Hitri pregled baze (Ghost/Errors)"),
         BotCommand("server", "🖥️ Status strežnika (RAM/CPU)"),
         BotCommand("admin_stats", "📉 Globalna statistika"),
         BotCommand("proxy_stats", "💸 Stroški proxyjev"),
