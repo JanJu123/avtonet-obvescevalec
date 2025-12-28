@@ -372,9 +372,10 @@ async def list_users_admin(update: telegram.Update, context: telegram.ext.Contex
         # Emoji status
         st = "💎" if u['is_active'] else "❌"
         
-        # Krajša imena paketov za boljšo poravnavo
+        # --- VARNI PREVZEM PAKETA ---
         pkg_map = {"TRIAL": "TRI", "BASIC": "BAS", "PRO": "PRO", "ULTRA": "ULT", "VIP": "VIP", "NONE": "---"}
-        pkg = pkg_map.get(u['subscription_type'].upper(), "---")
+        raw_pkg = u.get('subscription_type')
+        pkg = pkg_map.get(raw_pkg.upper(), "---") if raw_pkg else "---"
         
         uid = str(u['telegram_id'])
         
@@ -386,16 +387,19 @@ async def list_users_admin(update: telegram.Update, context: telegram.ext.Contex
         hnd = u.get('telegram_username') or "---"
         if len(hnd) > w_hnd: hnd = hnd[:w_hnd-1] + "."
         
-        # Datum (samo DD.MM, da prihranimo prostor)
+        # Datum (samo DD.MM)
         exp = "---"
         if u['subscription_end']:
-            d = u['subscription_end'].split(".")[0]
-            m = u['subscription_end'].split(".")[1]
-            exp = f"{d}.{m}"
+            try:
+                parts = u['subscription_end'].split(".")
+                exp = f"{parts[0]}.{parts[1]}"
+            except:
+                exp = "err"
 
-        # Sestava vrstice - Emojiji so zunaj f-stringa za stabilnost
+        # Sestava vrstice
         line = f"{st} {pkg:<{w_pkg}} | {uid:<{w_id}} | {name:<{w_name}} | {hnd:<{w_hnd}} | {exp}"
         table_rows.append(line)
+
 
     # VSE združimo v en sam <pre> blok
     # To prepreči prelamljanje in omogoči horizontalni scroll
