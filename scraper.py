@@ -178,19 +178,21 @@ class Scraper:
         return new_ads_list
 
     def run(self, urls_to_scrape):
-        """Glavni proces skeniranja s 100% varno AI obdelavo."""
+        """Glavni proces skeniranja s 100% varno AI obdelavo, logiranjem imen in štetjem napak."""
         # Barve za lepši izpis na VPS
         B_CYAN = "\033[96m"
         B_YELLOW = "\033[93m"
+        B_RED = "\033[91m"
         B_END = "\033[0m"
 
         def get_time():
             return time.strftime('%H:%M:%S')
 
+        # Normalizacija vhoda
         if isinstance(urls_to_scrape, str):
             res = self.db.get_connection().execute("SELECT url_id FROM Urls WHERE url = ?", (urls_to_scrape,)).fetchone()
             u_id = res[0] if res else 0
-            urls_to_scrape = [{'url_id': u_id, 'url': urls_to_scrape}]
+            urls_to_scrape = [{'url_id': u_id, 'url': urls_to_scrape, 'telegram_name': 'Manual Test'}]
 
         self.db.clear_scraped_snapshot()
 
@@ -198,11 +200,33 @@ class Scraper:
             try:
                 start_time = time.time()
                 u_id = entry['url_id']
-                print(f"{B_CYAN}[{get_time()}] 🔍 Skeniram URL ID {u_id}...{B_END}")
+                # NOVO: Pridobimo ime uporabnika za boljšo identifikacijo v logih
+                u_name = entry.get('telegram_name', 'Neznan')
+                
+                print(f"{B_CYAN}[{get_time()}] 🔍 Skeniram URL ID {u_id} (Uporabnik: {u_name})...{B_END}")
                 
                 html, bytes_used = self.get_latest_offers(entry['url'])
-                if not html: continue
+                
+                # --- TOČKA 5: LOGIKA ZA NAPAKE ---
+                if not html:
+                    # Povečamo števec napak v bazi
+                    current_fails = self.db.update_url_fail_count(u_id)
+                    
+                    error_msg = "Cloudflare Block ali napačen format"
+                    print(f"{B_RED}[{get_time()}] ❌ Napaka ({current_fails}/3) za {u_name} (ID: {u_id}){B_END}")
+                    
+                    # Logiramo napako v ScraperLogs
+                    self.db.log_scraper_run(u_id, 403, 0, round(time.time() - start_time, 2), 0, error_msg)
+                    
+                    if current_fails >= 3:
+                        print(f"{B_RED}[{get_time()}] ⚠️ URL {u_id} je dosegel limit napak! Potrebna preverba.{B_END}")
+                        # Tukaj bi lahko dodal kodo za avtomatsko deaktivacijo URL-ja, če želiš
+                    continue
+                else:
+                    # USPEH: Ponastavimo števec napak na 0
+                    self.db.reset_url_fail_count(u_id)
 
+                # --- NADALJEVANJE SKENIRANJA ---
                 is_first = self.db.is_first_scan(u_id)
                 soup = BeautifulSoup(html, 'html.parser')
                 rows = soup.find_all('div', class_='GO-Results-Row')
@@ -212,7 +236,6 @@ class Scraper:
 
                 for row in rows:
                     if self._is_top_ponudba(row): 
-                        # Tiho utišamo TOP ponudbe
                         link_tag = row.find('a', class_='stretched-link')
                         if link_tag:
                             href = link_tag.get('href', '')
@@ -225,7 +248,7 @@ class Scraper:
                     href = link_tag.get('href', '')
                     match = re.search(r'id=(\d+)', href)
                     if not match: continue
-                    content_id = str(match.group(1)) # Vedno v string
+                    content_id = str(match.group(1))
                     all_ids_on_page.append(content_id)
 
                     if not is_first and self.db.is_ad_new(content_id):
@@ -236,69 +259,57 @@ class Scraper:
                             "link": "https://www.avto.net" + href.replace("..", "")
                         })
 
-                # --- SCENARIJ 1: PRVI SKEN ---
                 if is_first:
-                    print(f"[{get_time()}] 📥 Prvi sken za ID {u_id}: Sinhroniziram {len(all_ids_on_page)} oglasov.")
+                    print(f"[{get_time()}] 📥 Prvi sken za {u_name}: Sinhroniziram {len(all_ids_on_page)} oglasov.")
                     self.db.bulk_add_sent_ads(u_id, all_ids_on_page)
                     duration = round(time.time() - start_time, 2)
                     self.db.log_scraper_run(u_id, 200, 0, duration, bytes_used, "Initial Sync")
                     continue
 
-                # --- SCENARIJ 2: NI NOVIH OGLASOV ---
                 if not new_ads_to_process:
                     duration = round(time.time() - start_time, 2)
                     self.db.log_scraper_run(u_id, 200, 0, duration, bytes_used, "No new ads")
                     continue
 
-                # SCENARIJ 3: NOVI OGLASI (Flood Protection)
+                # Flood Protection
                 if len(new_ads_to_process) > 5:
                     to_process = new_ads_to_process[:5]
                     to_mute_ids = [ad['id'] for ad in new_ads_to_process[5:]]
                     self.db.bulk_add_sent_ads(u_id, to_mute_ids)
                     new_ads_to_process = to_process
 
-                # --- AI PROCESIRANJE (Z VARNOSTNIM PARSIRANJEM) ---
+                # AI PROCESIRANJE
                 final_results = []
                 if config.USE_AI:
-                    print(f"{B_YELLOW}[{get_time()}] 🤖 AI obdeluje {len(new_ads_to_process)} oglasov...{B_END}")
+                    print(f"{B_YELLOW}[{get_time()}] 🤖 AI obdeluje {len(new_ads_to_process)} oglasov za {u_name}...{B_END}")
                     ai_results = self.ai.extract_ads_batch(new_ads_to_process)
                     
                     if ai_results:
                         for ad_data in ai_results:
-                            # 100% varno iskanje ID-ja (preverimo vse variante)
                             ad_id = ad_data.get('content_id') or ad_data.get('id') or ad_data.get('ID')
-                            
-                            # Poiščemo originalen oglas v naši listi
-                            # Uporabimo str() na obeh straneh za ziher ujemaje
                             orig = next((x for x in new_ads_to_process if str(x['id']) == str(ad_id)), None)
-                            
                             if orig:
-                                # Vsilimo originalne podatke, ki jih AI ne sme spreminjati
                                 ad_data['content_id'] = str(orig['id'])
                                 ad_data['link'] = orig['link']
                                 img_tag = orig['row_soup'].find('img')
                                 ad_data['slika_url'] = img_tag.get('data-src') or img_tag.get('src') if img_tag else None
                                 final_results.append(ad_data)
-                    else:
-                        print(f"[{get_time()}] ⚠️ AI ni vrnil podatkov, preklop na ročni Fallback.")
 
-                # Fallback na ročno parsiranje (če AI odpove ali je USE_AI = False)
                 if not final_results:
                     for item in new_ads_to_process:
                         img_tag = item['row_soup'].find('img')
                         img_url = img_tag.get('data-src') or img_tag.get('src') if img_tag else None
                         final_results.append(self._manual_parse_row(item['row_soup'], item['id'], item['link'], img_url))
 
-                # --- KONČNI ZAPIS ---
                 for data in final_results:
                     self.db.insert_scraped_data(u_id, data)
 
                 duration = round(time.time() - start_time, 2)
                 self.db.log_scraper_run(u_id, 200, len(final_results), duration, bytes_used, "Success")
-                print(f"✅ [{get_time()}] URL {u_id} končan. Pripravljenih {len(final_results)} oglasov v {duration}s.")
+                print(f"✅ [{get_time()}] URL {u_id} ({u_name}) končan v {duration}s.")
 
             except Exception as e:
-                print(f"❌ [{get_time()}] Kritična napaka pri URL {entry['url_id']}: {e}")
+                print(f"{B_RED}[{get_time()}] ❌ Kritična napaka pri URL {u_id} ({entry.get('telegram_name')}): {e}{B_END}")
             
             time.sleep(random.uniform(1, 2.5))
 

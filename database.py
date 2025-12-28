@@ -35,7 +35,8 @@ class Database:
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS Urls (
             url_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            url TEXT UNIQUE NOT NULL
+            url TEXT UNIQUE NOT NULL,
+            fail_count INTEGER DEFAULT 0
         )
         """)
 
@@ -578,35 +579,31 @@ class Database:
         return res
 
     def register_user(self, telegram_id, telegram_name):
-        """
-        Registrira novega uporabnika in mu avtomatsko podeli 3 dni TRIAL paketa.
-        Vrne True, če je uporabnik nov, sicer False.
-        """
+        """Registrira novega uporabnika ali posodobi ime obstoječemu."""
         conn = self.get_connection()
         c = conn.cursor()
         
-        # Preverimo, če uporabnik že obstaja
+        # Uporabimo 'INSERT OR REPLACE' ali pa preprosto preverimo
         existing = c.execute("SELECT 1 FROM Users WHERE telegram_id = ?", (telegram_id,)).fetchone()
-
+        
         if not existing:
-            # Nastavitve za TRIAL (3 dni, 1 URL, 15 min interval)
+            # Nov uporabnik (dobi TRIAL)
             from datetime import datetime, timedelta
             expiry = (datetime.now() + timedelta(days=3)).strftime("%d.%m.%Y %H:%M:%S")
-            
             c.execute("""
-                INSERT INTO Users (
-                    telegram_id, telegram_name, subscription_type, 
-                    max_urls, scan_interval, subscription_end, 
-                    is_active, joined_at
-                ) VALUES (?, ?, 'TRIAL', 1, 15, ?, 1, strftime('%d.%m.%Y %H:%M:%S', 'now', 'localtime'))
+                INSERT INTO Users (telegram_id, telegram_name, subscription_type, max_urls, scan_interval, subscription_end, is_active)
+                VALUES (?, ?, 'TRIAL', 1, 15, ?, 1)
             """, (telegram_id, telegram_name, expiry))
-            
             conn.commit()
             conn.close()
-            return True # Uporabnik je bil na novo ustvarjen
-            
-        conn.close()
-        return False # Uporabnik že obstaja
+            return True
+        else:
+            # Obstoječ uporabnik - posodobimo ime, če se je spremenilo
+            c.execute("UPDATE Users SET telegram_name = ? WHERE telegram_id = ?", (telegram_name, telegram_id))
+            conn.commit()
+            conn.close()
+            return False
+    
 
     def get_user_stats_24h(self, telegram_id):
         """Prešteje skene za uporabnika v zadnjih 24 urah."""
@@ -936,26 +933,28 @@ class Database:
         # Če ima nekdo 17 URL-jev, paket pa mu dovoljuje le 5, 
         # bo ta poizvedba vrnila le prvih 5 (po datumu dodajanja).
         query = """
-            WITH RankedTracking AS (
-                SELECT 
-                    t.url_id, 
-                    u.url, 
-                    us.scan_interval,
-                    us.subscription_type,
-                    us.is_active,
-                    ROW_NUMBER() OVER (PARTITION BY us.telegram_id ORDER BY t.created_at ASC) as url_rank,
-                    us.max_urls
-                FROM Tracking t
-                JOIN Urls u ON t.url_id = u.url_id
-                JOIN Users us ON t.telegram_id = us.telegram_id
-                WHERE us.is_active = 1
-            )
-            SELECT url_id, url, MIN(scan_interval) as min_interval,
-                MAX(CASE WHEN subscription_type = 'ULTRA' THEN 1 ELSE 0 END) as has_ultra
-            FROM RankedTracking
-            WHERE url_rank <= max_urls
-            GROUP BY url_id
-        """
+        WITH RankedTracking AS (
+            SELECT 
+                t.url_id, 
+                u.url, 
+                us.telegram_id,
+                us.telegram_name,
+                us.scan_interval,
+                us.subscription_type,
+                us.is_active,
+                ROW_NUMBER() OVER (PARTITION BY us.telegram_id ORDER BY t.created_at ASC) as url_rank,
+                us.max_urls
+            FROM Tracking t
+            JOIN Urls u ON t.url_id = u.url_id
+            JOIN Users us ON t.telegram_id = us.telegram_id
+            WHERE us.is_active = 1
+        )
+        SELECT url_id, url, telegram_name, MIN(scan_interval) as min_interval,
+            MAX(CASE WHEN subscription_type = 'ULTRA' THEN 1 ELSE 0 END) as has_ultra
+        FROM RankedTracking
+        WHERE url_rank <= max_urls AND u.fail_count < 3
+        GROUP BY url_id
+    """
         active_urls = c.execute(query).fetchall()
         
         pending = []
@@ -1194,7 +1193,64 @@ class Database:
 
 
 
+    def update_url_fail_count(self, url_id, reset=False):
+        """Poveča fail_count za 1 ali ga ponastavi na 0."""
+        conn = self.get_connection()
+        c = conn.cursor()
+        if reset:
+            c.execute("UPDATE Urls SET fail_count = 0 WHERE url_id = ?", (url_id,))
+        else:
+            c.execute("UPDATE Urls SET fail_count = fail_count + 1 WHERE url_id = ?", (url_id,))
+        conn.commit()
+        
+        # Vrnemo trenutno število napak
+        count = c.execute("SELECT fail_count FROM Urls WHERE url_id = ?", (url_id,)).fetchone()[0]
+        conn.close()
+        return count
 
+    def get_url_owners(self, url_id):
+        """Vrne seznam telegram_id-jev, ki sledijo temu URL-ju."""
+        conn = self.get_connection()
+        rows = conn.execute("SELECT telegram_id FROM Tracking WHERE url_id = ?", (url_id,)).fetchall()
+        conn.close()
+        return [r[0] for r in rows]
+
+
+
+    def update_url_fail_count(self, url_id):
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute("UPDATE Urls SET fail_count = fail_count + 1 WHERE url_id = ?", (url_id,))
+        conn.commit()
+        res = c.execute("SELECT fail_count FROM Urls WHERE url_id = ?", (url_id,)).fetchone()
+        conn.close()
+        return res[0] if res else 0
+
+    def reset_url_fail_count(self, url_id):
+        conn = self.get_connection()
+        c = conn.cursor()
+        c.execute("UPDATE Urls SET fail_count = 0 WHERE url_id = ?", (url_id,))
+        conn.commit()
+        conn.close()
+
+
+    def get_newly_failed_urls(self):
+        """Vrne seznam URL-jev in njihovih lastnikov, ki so ravnokar dosegli 3 napake."""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        
+        # Poiščemo URL-je, ki imajo fail_count točno 3 (da ne obveščamo vsakič znova pri 4, 5...)
+        query = """
+            SELECT u.url_id, u.url, t.telegram_id, us.telegram_name
+            FROM Urls u
+            JOIN Tracking t ON u.url_id = t.url_id
+            JOIN Users us ON t.telegram_id = us.telegram_id
+            WHERE u.fail_count = 3
+        """
+        rows = c.execute(query).fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
 
 if __name__ == "__main__":
     db = Database(db_name="test_bot.db")

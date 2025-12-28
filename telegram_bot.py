@@ -219,22 +219,25 @@ async def info_command(update: telegram.Update, context: telegram.ext.ContextTyp
 async def help_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     """Navodila za uporabo bota."""
     msg = (
-        "📖 **NAVODILA ZA UPORABO**\n\n"
-        "1️⃣ **Pripravi iskanje:**\n"
-        "Pojdi na Avto.net, nastavi filtre (znamka, cena, letnik...) in klikni 'Išči'.\n\n"
-        "2️⃣ **Kopiraj URL:**\n"
-        "Kopiraj celoten naslov (URL) iz brskalnika.\n\n"
-        "3️⃣ **Dodaj v bota:**\n"
-        "Vpiši: `/add_url <tvoj_link>`\n\n"
-        "🚀 **In to je to!** Bot te bo obvestil takoj, ko se pojavi nov oglas.\n\n"
-        "**SEZNAM UKAZOV:**\n"
-        "• `/list` - Pregled tvojih iskanj\n"
-        "• `/remove_url <ID>` - Izbris iskanja\n"
+        "<b>📖 NAVODILA ZA UPORABO</b>\n\n"
+        "1️⃣ <b>Pripravi iskanje:</b>\n"
+        "Pojdi na Avto.net in nastavi filtre (znamka, cena, letnik...).\n\n"
+        "2️⃣ <b>⚠️ NUJEN KORAK:</b>\n"
+        "Rezultate obvezno razvrsti po <b>'datumu objave (najnovejši zgoraj)'</b>. "
+        "Brez tega koraka bot morda ne bo zaznal novih oglasov takoj!\n\n"
+        "3️⃣ <b>Kopiraj URL:</b>\n"
+        "Kopiraj celoten naslov iz brskalnika.\n\n"
+        "4️⃣ <b>Dodaj v bota:</b>\n"
+        "Vpiši: <code>/add_url tvoj_link</code>\n\n"
+        "🚀 <b>In to je to!</b> Bot te bo obvestil takoj, ko AI zazna nov oglas.\n\n"
+        "<b>SEZNAM UKAZOV:</b>\n"
+        "• `/list` - Pregled in status tvojih iskanj\n"
+        "• `/remove_url ID` - Izbris iskanja\n"
         "• `/info` - Status tvojega profila\n"
         "• `/packages` - Pregled paketov"
     )
 
-    await update.message.reply_text(msg, parse_mode="Markdown", disable_web_page_preview=True)
+    await update.message.reply_text(msg, parse_mode="HTML", disable_web_page_preview=True)
 
 async def packages_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     from config import SUBSCRIPTION_PACKAGES
@@ -414,6 +417,55 @@ async def deactivate_user(update: telegram.Update, context: telegram.ext.Context
         await update.message.reply_text("❌ Uporabi: `/deactivate ID`", parse_mode="Markdown")
 
 
+async def admin_overview_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    from config import ADMIN_ID
+    if str(update.effective_user.id) != str(ADMIN_ID): return
+
+    conn = db.get_connection()
+    c = conn.cursor()
+
+    # 1. Razvrstitev po paketih
+    stats_pkg = c.execute("SELECT subscription_type, COUNT(*) FROM Users GROUP BY subscription_type").fetchall()
+    
+    # 2. Kdo nima URL-jev (Ghost users)
+    ghosts = c.execute("""
+        SELECT telegram_name, telegram_id FROM Users 
+        WHERE telegram_id NOT IN (SELECT telegram_id FROM Tracking)
+        AND is_active = 1
+    """).fetchall()
+
+    # 3. Kdo ima pokvarjene linke (Fails)
+    failed_links = c.execute("""
+        SELECT us.telegram_name, u.url_id FROM Urls u 
+        JOIN Tracking t ON u.url_id = t.url_id 
+        JOIN Users us ON t.telegram_id = us.telegram_id 
+        WHERE u.fail_count > 0
+    """).fetchall()
+
+    msg = "📊 <b>SUPER ADMIN PREGLED</b>\n"
+    msg += "━━━━━━━━━━━━━━━━━━\n\n"
+    
+    msg += "📦 <b>STATISTIKA PAKETOV:</b>\n"
+    for pkg in stats_pkg:
+        msg += f"• {pkg[0]}: <b>{pkg[1]}</b>\n"
+    
+    msg += "\n👻 <b>GHOST UPORABNIKI (Brez linkov):</b>\n"
+    if ghosts:
+        for g in ghosts:
+            msg += f"• {g[0]} (<code>{g[1]}</code>)\n"
+    else:
+        msg += "<i>Vsi so aktivni!</i>\n"
+
+    msg += "\n⚠️ <b>PROBLEMATIČNI LINKI:</b>\n"
+    if failed_links:
+        for f in failed_links:
+            msg += f"• {f[0]} (URL ID: {f[1]})\n"
+    else:
+        msg += "<i>Vsi linki delujejo BP.</i>\n"
+
+    await update.message.reply_text(msg, parse_mode="HTML")
+
+
 def get_todays_requests_count(self):
     """Prešteje vse requeste v tabeli UserRequests za tekoči dan."""
     conn = self.get_connection()
@@ -541,27 +593,29 @@ async def check_user_command(update: telegram.Update, context: telegram.ext.Cont
 
 
 async def admin_help_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
-    from main import ADMIN_ID
+    from config import ADMIN_ID
     if str(update.effective_user.id) != str(ADMIN_ID): return
         
     msg = (
-        "👑 **ADMIN KOMANDNI CENTER**\n\n"
-        "📊 **Sistem & Finance**\n"
-        "• `/health` - Status scraperja in poraba MB (24h)\n"
-        "• `/proxy_stats` - **Analiza stroškov in napoved**\n"
-        "• `/logs` - Zadnjih 5 tehničnih zapisov\n"
+        "👑 <b>ADMIN KOMANDNI CENTER</b>\n\n"
+        "📊 <b>Sistem & Nadzor</b>\n"
+        "• `/overview` - <b>Pregled 'duhov' in pokvarjenih linkov</b>\n"
+        "• `/server` - Poraba virov (RAM/CPU)\n"
+        "• `/health` - Status scraperja (24h)\n"
+        "• `/proxy_stats` - Stroški in napoved\n"
+        "• `/logs` - Zadnjih 5 tehničnih zapisov\n\n"
         
-        "👥 **Uporabniki**\n"
+        "👥 <b>Uporabniki</b>\n"
         "• `/users` - Seznam vseh uporabnikov\n"
-        "• `/check_user <ID>` - Diagnoza (URL-ji, zadnji oglasi)\n"
-        "• `/activate <ID> <tip> <dni>` - Podaljšaj dostop\n"
-        "• `/deactivate <ID>` - Prekliči dostop\n\n"
+        "• `/check_user ID` - Diagnoza in seznam linkov\n"
+        "• `/activate ID TIP DNI` - Podaljšaj (ali vklopi trial)\n"
+        "• `/deactivate ID` - Hard reset statusa na 0\n\n"
         
-        "📢 **Komunikacija**\n"
-        "• `/broadcast <tekst>` - Pošlji vsem obvestilo\n"
+        "📢 <b>Komunikacija</b>\n"
+        "• `/broadcast TEXT` - Pošlji vsem obvestilo\n"
         "• `/admin_stats` - Hitra statistika baze"
     )
-    await update.message.reply_text(msg, parse_mode="Markdown")
+    await update.message.reply_text(msg, parse_mode="HTML")
 
 
 async def handle_message(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
@@ -664,26 +718,26 @@ async def error(update: telegram.Update, context: telegram.ext.ContextTypes.DEFA
     print(f"Update {update} caused error {context.error}")
 
 
-
 async def post_init(application: telegram.ext.Application) -> None:
-    from main import ADMIN_ID
+    from config import ADMIN_ID
     # 1. Ukazi za navadne uporabnike
     user_commands = [
-        BotCommand("start", "Začetek in registracija"),
-        BotCommand("add_url", "Dodaj nov URL"),
-        BotCommand("list", "Moja iskanja"),
-        BotCommand("remove_url", "Izbriši URL"),
-        BotCommand("info", "Moj profil in status"),
-        BotCommand("help", "Navodila za uporabo"),
-        BotCommand("packages", "Cenik paketov")
+        BotCommand("start", "🚀 Začetek in registracija"),
+        BotCommand("add_url", "➕ Dodaj nov URL"),
+        BotCommand("list", "📋 Moja iskanja"),
+        BotCommand("remove_url", "🗑️ Izbriši URL"),
+        BotCommand("info", "ℹ️ Moj profil in status"),
+        BotCommand("help", "📖 Navodila za uporabo"),
+        BotCommand("packages", "💎 Cenik paketov")
     ]
     await application.bot.set_my_commands(user_commands, scope=BotCommandScopeDefault())
 
     # 2. Ukazi samo zate (Admin)
     admin_commands = user_commands + [
-        BotCommand("admin", "👑 Admin Center"),
+        BotCommand("admin", "👑 Admin Center (Pomoč)"),
+        BotCommand("overview", "📊 Hitri pregled baze (Ghost/Errors)"),
         BotCommand("server", "🖥️ Status strežnika (RAM/CPU)"),
-        BotCommand("admin_stats", "📊 Globalna statistika"),
+        BotCommand("admin_stats", "📉 Globalna statistika"),
         BotCommand("proxy_stats", "💸 Stroški proxyjev"),
         BotCommand("health", "🏥 Zdravje sistema"),
         BotCommand("users", "👥 Seznam uporabnikov"),
@@ -691,11 +745,10 @@ async def post_init(application: telegram.ext.Application) -> None:
         BotCommand("activate", "🚀 Aktiviraj (ID PAKET DNI)"),
         BotCommand("deactivate", "🚫 Deaktiviraj (ID)"),
         BotCommand("logs", "📜 Zadnje aktivnosti"),
-        BotCommand("broadcast", "📢 Pošlji obvestilo")
+        BotCommand("broadcast", "📢 Pošlji vsem obvestilo")
     ]
     
     try:
-        # Pretvori ADMIN_ID v int, če je v .env zapisan kot string
         await application.bot.set_my_commands(
             admin_commands, 
             scope=BotCommandScopeChat(chat_id=int(ADMIN_ID))

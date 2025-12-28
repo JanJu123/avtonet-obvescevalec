@@ -6,7 +6,8 @@ from scraper import Scraper
 from data_manager import DataManager
 from telegram_bot import start_command, list_command, add_url_command, remove_url_command, info_command, activate_user, \
     deactivate_user, admin_stats_command, admin_help_command, broadcast_command, list_users_admin, admin_logs_command, \
-    health_command, check_user_command, proxy_stats_command, packages_command, help_command, post_init, server_status_command
+    health_command, check_user_command, proxy_stats_command, packages_command, help_command, post_init, server_status_command, \
+    admin_overview_command
 from dotenv import load_dotenv
 import os
 import datetime
@@ -43,7 +44,6 @@ B_END = "\033[0m"
 from config import SUBSCRIPTION_PACKAGES, TOKEN, DB_PATH, ADMIN_ID, PROXY_PRICE_GB
 
 async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
-    # Pomožna funkcija za trenutni čas
     def get_time():
         return datetime.datetime.now().strftime('%H:%M:%S')
 
@@ -57,17 +57,45 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
         return
 
     pending_ids = [u['url_id'] for u in pending_urls]
-    # TUKAJ JE ZELENA VRSTICA S ČASOM
     print(f"{B_GREEN}[{get_time()}] 🚀 Skeniram: {len(pending_ids)} URL-jev na vrsti.{B_END}")
 
     scraper = Scraper(DataBase=db)
     manager = DataManager(db)
 
-    # Scraper teče v svojem threadu
+    # 1. Zagon scraperja
     await asyncio.to_thread(scraper.run, pending_urls) 
     
-    novi_oglasi = manager.check_new_offers(filter_url_ids=pending_ids)
+    # --- NOVO: MO ST ZA POKVARJENE LINKU ---
+    failed_ones = db.get_newly_failed_urls()
+    for f in failed_ones:
+        t_id = f['telegram_id']
+        u_id = f['url_id']
+        u_name = f['telegram_name']
+        
+        # Obvestilo UPORABNIKU
+        user_msg = (
+            "⚠️ <b>TEŽAVA Z ISKALNIM LINKOM</b>\n\n"
+            f"Opazili smo, da tvoj link (ID: {u_id}) vztrajno javlja napako. "
+            "Sistem ga je začasno <b>zamrznil</b>, da ne trošimo virov.\n\n"
+            "<b>Kaj storiti?</b>\n"
+            "1. Preveri, če link sploh deluje v brskalniku.\n"
+            "2. Izbriši ga z <code>/remove_url</code> in dodaj ponovno.\n"
+            "3. Če se težava ponovi, piši adminu."
+        )
+        
+        # Obvestilo ADMINU (Tebi)
+        admin_alert = f"🚨 <b>POKVARJEN LINK:</b>\nUporabnik: {u_name} ({t_id})\nURL ID: {u_id}\nStatus: Avtomatsko ustavljeno."
+        
+        try:
+            await context.bot.send_message(chat_id=t_id, text=user_msg, parse_mode="HTML")
+            await context.bot.send_message(chat_id=ADMIN_ID, text=admin_alert, parse_mode="HTML")
+            print(f"{B_YELLOW}[{get_time()}] 📢 Obveščen uporabnik {u_name} o pokvarjenem linku.{B_END}")
+        except:
+            pass
 
+    # 2. Preverjanje novih oglasov (tvoja stara logika se nadaljuje)
+    novi_oglasi = manager.check_new_offers(filter_url_ids=pending_ids)
+    
     if not novi_oglasi:
         print(f"{B_BLUE}[{get_time()}] ℹ️ Ni novih oglasov za te skene.{B_END}")
         return
@@ -196,6 +224,7 @@ def main():
     application.add_handler(telegram.ext.CommandHandler("health", health_command))
     application.add_handler(telegram.ext.CommandHandler("check_user", check_user_command))
     application.add_handler(telegram.ext.CommandHandler("proxy_stats", proxy_stats_command))
+    application.add_handler(telegram.ext.CommandHandler("admin_overview", admin_overview_command))
 
     application.add_handler(telegram.ext.CommandHandler("server", server_status_command))
     application.add_handler(telegram.ext.CommandHandler("logs", admin_logs_command))
