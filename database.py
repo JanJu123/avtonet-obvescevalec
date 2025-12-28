@@ -530,14 +530,13 @@ class Database:
         return row
 
     def get_all_users_admin(self):
-        """Vrne vse uporabnike za admin pregled."""
         conn = self.get_connection()
-        conn.row_factory = sqlite3.Row
         c = conn.cursor()
-        c.execute("SELECT telegram_id, telegram_name, is_active, subscription_type, subscription_end FROM Users")
-        users = c.fetchall()
+        # Prepričaj se, da je telegram_username v SELECT stavku!
+        query = "SELECT telegram_id, telegram_name, telegram_username, subscription_type, subscription_end, is_active FROM Users"
+        rows = c.execute(query).fetchall()
         conn.close()
-        return users
+        return rows
 
     def get_all_chat_ids(self):
         """Vrne samo seznam vseh ID-jev za broadcast."""

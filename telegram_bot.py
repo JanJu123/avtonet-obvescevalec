@@ -211,8 +211,11 @@ async def list_command(update: telegram.Update, context: telegram.ext.ContextTyp
 
 
 async def info_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+    user_id = update.effective_user
+    user = update.effective_user.id
     
+    db.register_user(user.id, user.first_name, user.username)
+
     # Pridobimo vse podatke iz posodobljene get_user funkcije
     user_data = db.get_user(user_id)
     
@@ -354,25 +357,28 @@ async def list_users_admin(update: telegram.Update, context: telegram.ext.Contex
     msg += "<code>ST | PAKET  | ID (copy)   | @HANDLE (copy)</code>\n"
     msg += "━━━━━━━━━━━━━━━━━━\n\n"
 
-    for u in users:
+    for row in users:
+        # KLJUČNI POPRAVEK: spremenimo Row v Dict
+        u = dict(row)
+        
         # 1. Status Emoji
         st = "💎" if u['is_active'] else "❌"
         
-        # 2. Paket (poravnan na 6 mest)
+        # 2. Paket
         pkg = (u['subscription_type'] or "NONE").upper()
         pkg_display = f"<b>{pkg:<6}</b>"
         
-        # 3. ID (v <code> tagu, da se skopira na klik)
+        # 3. ID (skopira se na klik)
         uid = f"<code>{u['telegram_id']}</code>"
         
-        # 4. Handle ali Ime (v <code> tagu, da se skopira na klik)
+        # 4. Handle ali Ime (skopira se na klik)
+        # Zdaj .get() končno dela!
         raw_handle = u.get('telegram_username')
         if raw_handle:
             handle = f"@{raw_handle}"
         else:
             handle = u['telegram_name'] or "Neznan"
         
-        # Skrajšamo, da se vrstica na mobilcu ne prelomi
         if len(handle) > 12:
             handle = handle[:10] + ".."
         
