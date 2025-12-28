@@ -174,7 +174,7 @@ def main():
     application = telegram.ext.Application.builder().token(TOKEN).post_init(post_init).build()
 
     # --- REGISTRACIJA HANDLERJEV ---
-    # (Tukaj poveži svoje že delujoče funkcije)
+    
     application.add_handler(telegram.ext.CommandHandler("start", start_command))
     application.add_handler(telegram.ext.CommandHandler("add_url", add_url_command))
     application.add_handler(telegram.ext.CommandHandler("list", list_command))
