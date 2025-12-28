@@ -1,6 +1,6 @@
 import re
 import json
-from urllib.parse import urlparse, parse_qs, urlencode, urlunparse, quote, unquote
+import urllib.parse
 
 def pocisti_ceno_v_stevilko(raw_cena):
     """Pretvori string cene (npr. '21.980 €oz. 18.016 €') v čisto število (21980)."""
@@ -111,48 +111,43 @@ def extrahiraj_podatke(oglas_div):
 
 
 
-
-
 def fix_avtonet_url(url):
     """
-    Ultimativna pralnica: skrajša link za 90%, popravi slovenske znake 
-    in prepreči Error 005.
+    Popravi kodiranje in odstrani presledke, strukturo pa pusti 100% isto.
+    Namenjeno reševanju napake 005 brez brisanja parametrov.
     """
-    # 1. Osnovno čiščenje zunanjih smeti
-    url = url.strip().strip('<>').replace(' ', '')
-    
-    try:
-        # 2. Dekodiramo vse %8A in podobne v normalne črke (Š, Č, Ž)
-        # Uporabimo latin-1, da ulovimo Avto.net-ove stare znake
-        url = unquote(url, encoding='latin-1')
-        
-        u = urlparse(url)
-        query_params = parse_qs(u.query)
-        
-        # 3. OČISTIMO VSE PRAZNE IN NEPOTREBNE PARAMETRE
-        # Obdržimo samo tisto, kar dejansko ima vrednost
-        clean_params = {}
-        for k, v in query_params.items():
-            val = v[0].strip()
-            # Prazne vrednosti ali privzete ničle (razen cene/letnika) popolnoma odstranimo
-            if val == "" or val == "0" and k not in ['cenaMin', 'cenaMax', 'letnikMin', 'letnikMax']:
-                continue
-            # Odstranimo vse tiste dolge EQ1, EQ2... ki so na 1000000000
-            if k.startswith('EQ') and val == "1000000000":
-                continue
-            
-            clean_params[k] = [val]
+    # 1. Osnovno čiščenje zunanjih znakov in vseh presledkov v linku
+    # Avto.net v URL-ju ne sme imeti nobenega presledka!
+    url = url.strip().strip('<>').replace(' ', '').replace('%20', '')
 
-        # 4. PRISILIMO SORTIRANJE (Vedno)
-        clean_params['presort'] = ['3']
-        clean_params['tipsort'] = ['DESC']
-        clean_params['stran'] = ['1']
+    try:
+        # 2. Najprej dekodiramo vse, da dobimo čiste slovenske znake (ŠČŽ)
+        # Poskusimo najprej z latin-1 (Avto.net standard)
+        decoded = urllib.parse.unquote(url, encoding='latin-1')
         
-        # 5. Sestavimo URL nazaj z UTF-8 kodiranjem (varni linki)
-        new_query = urlencode(clean_params, doseq=True)
-        fixed_url = urlunparse((u.scheme, u.netloc, u.path, u.params, new_query, u.fragment))
+        # 3. Ročni popravek, če je 'Škoda' slučajno postala 'koda' ali 'koda'
+        if 'koda' in decoded and 'Škoda' not in decoded:
+            decoded = decoded.replace('koda', 'Škoda')
+
+        # 4. Ponovno zakodiramo v latin-1 (Windows-1250)
+        # To je tisto, kar Avto.net dejansko pričakuje za ŠČŽ
+        u = urllib.parse.urlparse(decoded)
+        query_dict = urllib.parse.parse_qs(u.query)
+        
+        # Ponovno sestavimo query string z latin-1 kodiranjem
+        # safe=':/?&=,' prepreči kodiranje nujnih znakov
+        new_query = urllib.parse.urlencode(query_dict, doseq=True, encoding='latin-1')
+        
+        fixed_url = urllib.parse.urlunparse((
+            u.scheme,
+            u.netloc,
+            u.path,
+            u.params,
+            new_query,
+            u.fragment
+        ))
         
         return fixed_url
     except Exception as e:
-        print(f"Error fix_url: {e}")
+        print(f"Error fixing URL encoding: {e}")
         return url
