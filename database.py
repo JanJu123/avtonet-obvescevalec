@@ -429,13 +429,18 @@ class Database:
         c = conn.cursor()
 
         stats = {}
-        
+    
+
         # Današnji datum v tvojem formatu za filter (npr. '29.12.2025%')
         today_prefix = datetime.datetime.now().strftime("%d.%m.%Y") + "%"
         
         # Trenutni mesec in leto za mesečno statistiko
         current_month = datetime.datetime.now().strftime("%m")
         current_year = datetime.datetime.now().strftime("%Y")
+
+        # Izračunamo, koliko minut je preteklo od polnoči (da dobimo točen req/min)
+        minutes_today = datetime.datetime.now().hour * 60 + datetime.datetime.now().minute
+        if minutes_today == 0: minutes_today = 1 # Preprečimo deljenje z 0 ob polnoči
 
         # --- OSNOVNE ŠTEVILKE ---
         stats['vsi_skenirani'] = c.execute("SELECT COUNT(*) FROM ScrapedData").fetchone()[0]
@@ -493,6 +498,8 @@ class Database:
         """
         c.execute(query_breakdown_month, (current_month, current_year))
         stats['user_breakdown_month'] = [dict(row) for row in c.fetchall()]
+
+        stats['minutes_today'] = minutes_today
 
         conn.close()
         return stats

@@ -601,8 +601,10 @@ async def admin_stats_command(update: telegram.Update, context: telegram.ext.Con
 
     req_danes = stats.get('requesti_danes', 0)
     cost_danes = stats.get('cost_danes', 0)
+    mins_today = stats.get('minutes_today', 1)
     
-    # Izračunamo učinkovitost (koliko nas stane 1000 obiskov Avto.net)
+
+    req_per_min = req_danes / mins_today
     cost_per_1k = (cost_danes / req_danes * 1000) if req_danes > 0 else 0
 
     msg = (
@@ -610,7 +612,8 @@ async def admin_stats_command(update: telegram.Update, context: telegram.ext.Con
         "━━━━━━━━━━━━━━━━━━\n\n"
         "📅 <b>DANES (od 00:00):</b>\n"
         f"🌐 Skupaj requestov: <b>{req_danes}</b>\n"
-        f"💰 Realen strošek: <b>{cost_danes:.2f}€</b>\n"
+        f"⚡ Obremenitev: <b>{req_per_min:.1f} req/min</b>\n"
+        f"💰 Realen strošek: <b>{cost_danes:.4f}€</b>\n"
         f"📉 Cena / 1000 skenov: <b>{cost_per_1k:.2f}€</b>\n\n"
         "👤 <b>PORABA PO UPORABNIKIH (Danes):</b>\n"
     )
