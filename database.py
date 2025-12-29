@@ -751,7 +751,7 @@ class Database:
         c = conn.cursor()
 
         # Današnji datum za filter
-        today_prefix = datetime.now().strftime("%d.%m.%Y") + "%"
+        today_prefix = datetime.datetime.now().strftime("%d.%m.%Y") + "%"
 
         query = """
             SELECT 
