@@ -969,7 +969,7 @@ class Database:
             return []
 
         pending = []
-        now = datetime.now()
+        now = datetime.datetime.now()
         is_night = 0 <= now.hour < 7
 
         for row in active_urls:
