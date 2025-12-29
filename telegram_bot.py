@@ -67,11 +67,11 @@ async def start_command(update: telegram.Update, context: telegram.ext.ContextTy
 
     await update.message.reply_text(msg, parse_mode="HTML")
 
+
 async def add_url_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     from scraper import Scraper
-    import utils # Prepričaj se, da imaš fix_avtonet_url v utils.py ali na vrhu te datoteke
+    import utils 
     
-    # 1. Pridobimo sporočilo na varen način
     msg_obj = update.effective_message
     if not msg_obj:
         return
@@ -84,10 +84,9 @@ async def add_url_command(update: telegram.Update, context: telegram.ext.Context
     t_id = update.effective_user.id
     t_name = update.effective_user.first_name
 
-    # --- 2. VAROVALKA: VALIDACIJA LINKA ---
-    # Preverimo, če je to sploh Avto.net link z rezultati
+    # 1. Validacija linka
     if "avto.net" not in raw_url.lower() or "results.asp" not in raw_url.lower():
-        db.log_user_activity(t_id, "/add_url", f"ZAVRNJENO: Neveljaven link ({raw_url[:20]})")
+        db.log_user_activity(t_id, "/add_url", f"ZAVRNJENO: Neveljaven link")
         await msg_obj.reply_text(
             "❌ <b>NAPAKA: To ni veljaven iskalni link!</b>\n\n"
             "Pojdi na Avto.net, nastavi filtre in kopiraj <b>celoten</b> naslov iz brskalnika.",
@@ -95,17 +94,17 @@ async def add_url_command(update: telegram.Update, context: telegram.ext.Context
         )
         return
 
-    # 3. Čiščenje in popravek sortiranja preko utils
+    # 2. Čiščenje in popravek sortiranja
     fixed_url = utils.fix_avtonet_url(raw_url)
 
-    # 4. Preveri naročnino in limite
+    # 3. Preveri naročnino in limite
     user_info = db.get_user_subscription_info(t_id)
     if not user_info:
-        await msg_obj.reply_text("❌ Tvoj profil ni registriran. Uporabi /start.")
+        await msg_obj.reply_text("❌ Tvoj profil ni registriran. Uporabi /start.", parse_mode="HTML")
         return
 
     if user_info['current_url_count'] >= user_info['max_urls']:
-        db.log_user_activity(t_id, "/add_url", f"ZAVRNJENO: Dosežen limit ({user_info['max_urls']})")
+        db.log_user_activity(t_id, "/add_url", f"ZAVRNJENO: Dosežen limit")
         await msg_obj.reply_text(
             f"🚫 <b>Limit dosežen!</b>\n\n"
             f"Tvoj paket {user_info['subscription_type']} dovoljuje največ <code>{user_info['max_urls']}</code> iskanj.\n"
@@ -114,34 +113,40 @@ async def add_url_command(update: telegram.Update, context: telegram.ext.Context
         )
         return
 
-    # 5. Dodajanje v bazo
+    # 4. Dodajanje v bazo
     status, new_url_id = db.add_search_url(t_id, fixed_url)
 
     if status == "exists":
-        await msg_obj.reply_text("ℹ️ Temu URL-ju že slediš! Ni ga treba dodajati dvakrat.")
+        await msg_obj.reply_text("ℹ️ Temu URL-ju že slediš! Ni ga treba dodajati dvakrat.", parse_mode="HTML")
         return
     elif status is True:
-        # LOGIRANJE USPEHA
         db.log_user_activity(t_id, "/add_url", f"Dodan URL ID: {new_url_id}")
         
-        sync_msg = await msg_obj.reply_text("⏳ Sinhroniziram trenutne oglase (tiha sinhronizacija)...")
-        
-        try:
-            # Pokličemo scraper v ločeni niti za Initial Sync
-            temp_scraper = Scraper(db)
-            # Podamo mu ime, da boš v logih videl kdo synca
-            pending_data = [{'url_id': new_url_id, 'url': fixed_url, 'telegram_name': t_name}]
-            
-            await asyncio.to_thread(temp_scraper.run, pending_data)
-            
-            await sync_msg.edit_text(
-                "✅ <b>Iskanje uspešno dodano!</b>\n\n"
-                "Sistem si je zapomnil trenutno ponudbo. Obvestim te takoj, ko se pojavi kakšen <b>nov</b> avtomobil! 🚀",
+        # --- KLJUČNI POPRAVEK: Preverimo, če je uporabnik sploh aktiven ---
+        if user_info.get('is_active'):
+            # UPORABNIK JE AKTIVEN - Standardni sync in uspeh
+            sync_msg = await msg_obj.reply_text("⏳ Sinhroniziram trenutne oglase (tiha sinhronizacija)...")
+            try:
+                temp_scraper = Scraper(db)
+                pending_data = [{'url_id': new_url_id, 'url': fixed_url, 'telegram_name': t_name}]
+                await asyncio.to_thread(temp_scraper.run, pending_data)
+                
+                await sync_msg.edit_text(
+                    "✅ <b>Iskanje uspešno dodano!</b>\n\n"
+                    "Sistem si je zapomnil trenutno ponudbo. Obvestim te takoj, ko se pojavi kakšen <b>nov</b> avtomobil! 🚀",
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                print(f"Sync Error: {e}")
+                await sync_msg.edit_text("✅ <b>Iskanje dodano!</b>\nSinhronizacija bo končana ob naslednjem pregledu.", parse_mode="HTML")
+        else:
+            # UPORABNIK JE NEAKTIVEN - Samo shranimo link, a ne skeniramo
+            await msg_obj.reply_text(
+                "⚠️ <b>Iskanje dodano, VENDAR...</b>\n\n"
+                "Tvoj profil trenutno <b>ni aktiven</b> 🔴. Iskanje je varno shranjeno, vendar bot ne bo preverjal oglasov, dokler ne podaljšaš naročnine.\n\n"
+                "Preveri ponudbo z ukazom /packages",
                 parse_mode="HTML"
             )
-        except Exception as e:
-            print(f"Sync Error pri {t_name}: {e}")
-            await sync_msg.edit_text("✅ <b>Iskanje dodano!</b>\nSinhronizacija bo končana ob naslednjem rednem pregledu.", parse_mode="HTML")
     else:
         await msg_obj.reply_text("❌ Prišlo je do napake pri vpisu v bazo. Poskusi kasneje.")
 
@@ -176,49 +181,44 @@ async def remove_url_command(update: telegram.Update, context: telegram.ext.Cont
 
 async def list_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    
-    # Pridobimo URL-je in status
     urls = db.get_user_urls_with_status(user_id)
     user_info = db.get_user_subscription_info(user_id)
 
     if not urls:
-        msg = (
-            "<b>Trenutno nimaš shranjenih iskanj.</b>\n\n"
-            "Novo iskanje dodaš z ukazom:\n"
-            "<code>/add_url URL_NASLOV</code>"
-        )
-        await update.message.reply_text(msg, parse_mode="HTML")
+        await update.message.reply_text("Trenutno nimaš shranjenih iskanj. Dodaj jih z <code>/add_url</code>.", parse_mode="HTML")
         return
 
     msg = "📋 <b>TVOJA ISKANJA</b>\n"
     msg += "━━━━━━━━━━━━━━━━━━\n\n"
     
+    # Shranimo prvi ID za primer v navodilih spodaj
+    example_id = urls[0]['url_id']
+
     for u in urls:
         status_emoji = "✅" if u['active'] else "⏸️"
+        # Očistimo URL za link, da ne povzroča težav
+        clean_href = u['url'].replace(" ", "%20")
         
         msg += f"{status_emoji} <b>ID: {u['url_id']}</b> - "
-        msg += f"<a href='{u['url']}'>Odpri iskanje na Avto.net</a>\n"
+        msg += f"<a href='{clean_href}'>Odpri iskanje na Avto.net</a>\n"
         
         if not u['active']:
             msg += "<i>(Zamrznjeno - nad limitom paketa)</i>\n"
         msg += "──────────────────\n"
 
-    # Podatki o zasedenosti
     if user_info:
+        status_text = "🟢 Aktiven" if user_info['is_active'] else "🔴 Neaktiven"
         msg += f"\n📊 Zasedenost: <b>{len(urls)} / {user_info['max_urls']}</b> mest\n"
-        msg += f"📦 Paket: <b>{user_info['subscription_type']}</b>\n"
+        msg += f"📦 Paket: <b>{user_info['subscription_type']}</b> ({status_text})\n"
         
-        if len(urls) > user_info['max_urls']:
-            msg += "\n⚠️ <b>Nekatera iskanja so zamrznjena.</b> Za aktivacijo vseh mest nadgradi paket!"
+        if not user_info['is_active']:
+            msg += "\n⚠️ <b>POZOR:</b> Tvoj profil je neaktiven, zato bot ne skenira teh linkov!"
 
-    # --- DODANO NAVODILO ZA ODSTRANITEV ---
     msg += "\n\n🗑️ <b>ODSTRANITEV ISKANJA:</b>\n"
-    msg += "Za izbris uporabi ukaz <code>/remove_url</code> in ID številko.\n"
-    msg += "Primer: <code>/remove_url {u['url_id']}</code>" if urls else "Primer: <code>/remove_url 5</code>"
+    msg += f"Za izbris uporabi ukaz <code>/remove_url {example_id}</code>"
 
-    # disable_web_page_preview prepreči tiste velike slike pod sporočilom
     await update.message.reply_text(msg, parse_mode="HTML", disable_web_page_preview=True)
-    
+
 
 
 async def info_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
