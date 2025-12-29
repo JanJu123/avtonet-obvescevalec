@@ -196,11 +196,9 @@ async def list_command(update: telegram.Update, context: telegram.ext.ContextTyp
 
     for u in urls:
         status_emoji = "✅" if u['active'] else "⏸️"
-        # Očistimo URL za link, da ne povzroča težav
-        clean_href = u['url'].replace(" ", "%20")
         
         msg += f"{status_emoji} <b>ID: {u['url_id']}</b> - "
-        msg += f"<a href='{clean_href}'>Odpri iskanje na Avto.net</a>\n"
+        msg += f"<a href='{u['url_text']}'>Odpri iskanje na Avto.net</a>\n"
         
         if not u['active']:
             msg += "<i>(Zamrznjeno - nad limitom paketa)</i>\n"

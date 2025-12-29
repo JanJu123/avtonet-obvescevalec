@@ -183,7 +183,7 @@ class Scraper:
         return new_ads_list
 
     def run(self, urls_to_scrape):
-        """Glavni proces skeniranja s 100% varno AI obdelavo, logiranjem imen in štetjem napak."""
+        """Glavni proces skeniranja s podporo za binarno shranjene URL-je."""
         # Barve za lepši izpis na VPS
         B_CYAN = "\033[96m"
         B_YELLOW = "\033[93m"
@@ -193,11 +193,18 @@ class Scraper:
         def get_time():
             return time.strftime('%H:%M:%S')
 
-        # Normalizacija vhoda
+        # 1. Normalizacija vhoda (prilagojeno novi shemi)
         if isinstance(urls_to_scrape, str):
-            res = self.db.get_connection().execute("SELECT url_id FROM Urls WHERE url = ?", (urls_to_scrape,)).fetchone()
+            # Če ročno testiraš, poskusimo najti binarno verzijo v bazi preko hasha
+            u_bin = urls_to_scrape.encode('latin-1', 'ignore')
+            res = self.db.get_connection().execute("SELECT url_id, url_text FROM Urls WHERE url_bin = ?", (u_bin,)).fetchone()
             u_id = res[0] if res else 0
-            urls_to_scrape = [{'url_id': u_id, 'url': urls_to_scrape, 'telegram_name': 'Manual Test'}]
+            urls_to_scrape = [{
+                'url_id': u_id, 
+                'url_bin': u_bin, 
+                'url_text': urls_to_scrape, 
+                'telegram_name': 'Manual Test'
+            }]
 
         self.db.clear_scraped_snapshot()
 
@@ -205,33 +212,29 @@ class Scraper:
             try:
                 start_time = time.time()
                 u_id = entry['url_id']
-                # NOVO: Pridobimo ime uporabnika za boljšo identifikacijo v logih
                 u_name = entry.get('telegram_name', 'Neznan')
                 
+                # --- KLJUČNI DEL: PRIPRAVA BINARNEGA URL-ja ---
+                # Vzamemo bajte iz baze in jih dekodiramo v latin-1 string za curl_cffi
+                # To zagotovi, da %8A ostane %8A in se ne spremeni v UTF-8 kvačkanje
+                raw_url_bytes = entry['url_bin']
+                final_url = raw_url_bytes.decode('latin-1')
+
                 print(f"{B_CYAN}[{get_time()}] 🔍 Skeniram URL ID {u_id} (Uporabnik: {u_name})...{B_END}")
                 
-                html, bytes_used = self.get_latest_offers(entry['url'])
+                # Skeniranje z 'neuničljivim' URL-jem
+                html, bytes_used = self.get_latest_offers(final_url)
                 
-                # --- TOČKA 5: LOGIKA ZA NAPAKE ---
+                # Logika za napake (fail_count)
                 if not html:
-                    # Povečamo števec napak v bazi
                     current_fails = self.db.update_url_fail_count(u_id)
-                    
-                    error_msg = "Cloudflare Block ali napačen format"
-                    print(f"{B_RED}[{get_time()}] ❌ Napaka ({current_fails}/3) za {u_name} (ID: {u_id}){B_END}")
-                    
-                    # Logiramo napako v ScraperLogs
-                    self.db.log_scraper_run(u_id, 403, 0, round(time.time() - start_time, 2), 0, error_msg)
-                    
-                    if current_fails >= 3:
-                        print(f"{B_RED}[{get_time()}] ⚠️ URL {u_id} je dosegel limit napak! Potrebna preverba.{B_END}")
-                        # Tukaj bi lahko dodal kodo za avtomatsko deaktivacijo URL-ja, če želiš
+                    print(f"{B_RED}[{get_time()}] ❌ Napaka ({current_fails}/3) za {u_name}{B_END}")
+                    self.db.log_scraper_run(u_id, 403, 0, round(time.time() - start_time, 2), 0, "Block/Format Error")
                     continue
                 else:
-                    # USPEH: Ponastavimo števec napak na 0
                     self.db.reset_url_fail_count(u_id)
 
-                # --- NADALJEVANJE SKENIRANJA ---
+                # --- OBDELAVA HTML ---
                 is_first = self.db.is_first_scan(u_id)
                 soup = BeautifulSoup(html, 'html.parser')
                 rows = soup.find_all('div', class_='GO-Results-Row')
@@ -264,16 +267,16 @@ class Scraper:
                             "link": "https://www.avto.net" + href.replace("..", "")
                         })
 
+                # Scenarij 1: Prvi sken
                 if is_first:
                     print(f"[{get_time()}] 📥 Prvi sken za {u_name}: Sinhroniziram {len(all_ids_on_page)} oglasov.")
                     self.db.bulk_add_sent_ads(u_id, all_ids_on_page)
-                    duration = round(time.time() - start_time, 2)
-                    self.db.log_scraper_run(u_id, 200, 0, duration, bytes_used, "Initial Sync")
+                    self.db.log_scraper_run(u_id, 200, 0, round(time.time() - start_time, 2), bytes_used, "Initial Sync")
                     continue
 
+                # Scenarij 2: Ni novih
                 if not new_ads_to_process:
-                    duration = round(time.time() - start_time, 2)
-                    self.db.log_scraper_run(u_id, 200, 0, duration, bytes_used, "No new ads")
+                    self.db.log_scraper_run(u_id, 200, 0, round(time.time() - start_time, 2), bytes_used, "No new ads")
                     continue
 
                 # Flood Protection
@@ -300,12 +303,14 @@ class Scraper:
                                 ad_data['slika_url'] = img_tag.get('data-src') or img_tag.get('src') if img_tag else None
                                 final_results.append(ad_data)
 
+                # Manual Fallback
                 if not final_results:
                     for item in new_ads_to_process:
                         img_tag = item['row_soup'].find('img')
                         img_url = img_tag.get('data-src') or img_tag.get('src') if img_tag else None
                         final_results.append(self._manual_parse_row(item['row_soup'], item['id'], item['link'], img_url))
 
+                # Shranjevanje
                 for data in final_results:
                     self.db.insert_scraped_data(u_id, data)
 
@@ -314,15 +319,41 @@ class Scraper:
                 print(f"✅ [{get_time()}] URL {u_id} ({u_name}) končan v {duration}s.")
 
             except Exception as e:
-                print(f"{B_RED}[{get_time()}] ❌ Kritična napaka pri URL {u_id} ({entry.get('telegram_name')}): {e}{B_END}")
+                print(f"{B_RED}[{get_time()}] ❌ Kritična napaka pri URL {u_id}: {e}{B_END}")
             
             time.sleep(random.uniform(1, 2.5))
 
 # --- TEST ---
 if __name__ == "__main__":
-    test_db = Database("bot.db")
+    # 1. Priprava testne baze
+    # Uporabimo ločeno datoteko, da ne pacamo prave baze
+    test_db = Database("test_binary.db")
     test_db.init_db()
-    # Testni link za Mercedes
-    test_url = "https://www.avto.net/Ads/results.asp?znamka=Audi&model=&modelID=&tip=&znamka2=&model2=&tip2=&znamka3=&model3=&tip3=&cenaMin=0&cenaMax=999999&letnikMin=0&letnikMax=2090&bencin=0&starost2=999&oblika=0&ccmMin=0&ccmMax=99999&mocMin=0&mocMax=999999&kmMin=0&kmMax=9999999&kwMin=0&kwMax=999&motortakt=0&motorvalji=0&lokacija=0&sirina=0&dolzina=&dolzinaMIN=0&dolzinaMAX=100&nosilnostMIN=0&nosilnostMAX=999999&sedezevMIN=0&sedezevMAX=9&lezisc=&presek=0&premer=0&col=0&vijakov=0&EToznaka=0&vozilo=&airbag=&barva=&barvaint=&doseg=0&BkType=0&BkOkvir=0&BkOkvirType=0&Bk4=0&EQ1=1000000000&EQ2=1000000000&EQ3=1000000000&EQ4=1000000000&EQ5=1000000000&EQ6=1000000000&EQ7=1110100120&EQ8=100000000&EQ9=1000000020&EQ10=100000000&KAT=1010000000&PIA=&PIAzero=&PIAOut=&PSLO=&akcija=0&paketgarancije=&broker=0&prikazkategorije=0&kategorija=0&ONLvid=0&ONLnak=0&zaloga=10&arhiv=0&presort=&tipsort=&stran="
-    scraper = Scraper(test_db)
-    scraper.run([{'url_id': 1, 'url': test_url}])
+
+    # 2. Testni URL (vzamemo tvoj dolg Audi link)
+    raw_url = "https://www.avto.net/Ads/results.asp?znamka=Audi&model=&modelID=&tip=katerikolitip&znamka2=&model2=&tip2=&znamka3=&model3=&tip3=&cenaMin=0&cenaMax=999999&letnikMin=2008&letnikMax=2015&bencin=201&starost2=999&oblika=0&ccmMin=0&ccmMax=99999&mocMin=0&mocMax=999999&kmMin=0&kmMax=250000&kwMin=0&kwMax=999&motortakt=0&motorvalji=0&lokacija=0&sirina=0&dolzina=&dolzinaMIN=0&dolzinaMAX=100&nosilnostMIN=0&nosilnostMAX=999999&sedezevMIN=0&sedezevMAX=9&lezisc=&presek=0&premer=0&col=0&vijakov=0&EToznaka=0&vozilo=&airbag=&barva=&barvaint=&doseg=0&BkType=0&BkOkvir=0&BkOkvirType=0&Bk4=0&EQ1=1000000000&EQ2=1000000000&EQ3=1000000000&EQ4=100000000&EQ5=1000000000&EQ6=1000000000&EQ7=1110100120&EQ8=101000000&EQ9=1000000020&EQ10=1000000000&KAT=1010000000&PIA=&PIAzero=&PIAOut=&PSLO=&akcija=0&paketgarancije=&broker=0&prikazkategorije=0&kategorija=0&ONLvid=0&ONLnak=0&zaloga=10&arhiv=0&presort=3&tipsort=DESC&stran=1&subtip=0"
+    # 3. Simulacija baze: URL spremenimo v surove bajte (latin-1)
+    # To je ključni del nove tehnologije!
+    url_bin = raw_url.encode('latin-1', 'ignore')
+
+    # Pripravimo seznam, kot bi ga vrnil db.get_pending_urls()
+    pending_test_list = [{
+        'url_id': 999,
+        'url_text': raw_url, # Za loge
+        'url_bin': url_bin,  # Za dejansko delo
+        'telegram_name': 'Jan TEST'
+    }]
+
+    # 4. Zagon scraperja
+    print("\n" + "="*50)
+    print("🚀 ZAČENJAM BINARNI HYBRID TEST...")
+    print("="*50)
+    
+    scraper = Scraper(DataBase=test_db)
+    
+    # Zaženemo run metodo z našim testnim seznamom
+    scraper.run(pending_test_list)
+
+    print("\n" + "="*50)
+    print("🏁 TEST ZAKLJUČEN. Preveri loge zgoraj!")
+    print("="*50)

@@ -2,6 +2,8 @@ import sqlite3
 import json
 import datetime
 
+import hashlib
+
 class Database:
     def __init__(self, db_name):
         self.db_name = db_name
@@ -36,7 +38,9 @@ class Database:
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS Urls (
             url_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            url TEXT UNIQUE NOT NULL,
+            url TEXT NOT NULL,                -- Originalni stolpec (ne tikamo)
+            url_bin BLOB,                     -- Novo: Binarna verzija za scraper
+            url_hash TEXT UNIQUE,             -- Novo: Zaščita pred duplikati
             fail_count INTEGER DEFAULT 0
         )
         """)
@@ -921,17 +925,22 @@ class Database:
 
 
     def get_pending_urls(self):
+        """
+        Vrne URL-je, ki so na vrsti za skeniranje.
+        Uporablja 'url' za loge in 'url_bin' za dejansko skeniranje.
+        """
         conn = self.get_connection()
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         
-        # POMEMBNO: u.fail_count mora biti v SELECT delu znotraj RankedTracking!
+        # 1. SQL POIZVEDBA: RankedTracking za limite, vključuje tekstovni 'url' in binarni 'url_bin'
         query = """
             WITH RankedTracking AS (
                 SELECT 
                     t.url_id, 
-                    u.url, 
-                    u.fail_count, -- TUKAJ JE MORAL BITI DODAN
+                    u.url,              -- Originalen tekstovni stolpec
+                    u.url_bin,          -- Nov binarni stolpec za scraper
+                    u.fail_count,
                     us.telegram_id,
                     us.telegram_name,
                     us.scan_interval,
@@ -944,11 +953,11 @@ class Database:
                 JOIN Users us ON t.telegram_id = us.telegram_id
                 WHERE us.is_active = 1
             )
-            SELECT url_id, url, telegram_name, MIN(scan_interval) as min_interval,
+            SELECT url_id, url, url_bin, telegram_name, MIN(scan_interval) as min_interval,
                 MAX(CASE WHEN subscription_type = 'ULTRA' THEN 1 ELSE 0 END) as has_ultra
             FROM RankedTracking
             WHERE url_rank <= max_urls 
-            AND fail_count < 3 -- Zdaj bo to delovalo, ker je zgoraj v SELECTu
+            AND fail_count < 3
             GROUP BY url_id
         """
         
@@ -956,53 +965,84 @@ class Database:
             active_urls = c.execute(query).fetchall()
         except Exception as e:
             print(f"❌ SQL Napaka v get_pending_urls: {e}")
+            conn.close()
             return []
 
         pending = []
-        now = datetime.datetime.now()
+        now = datetime.now()
         is_night = 0 <= now.hour < 7
 
         for row in active_urls:
             u_id = row['url_id']
+            
+            # Določimo interval (Night mode logika)
             if is_night:
                 current_interval = 15 if row['has_ultra'] else 30
             else:
                 current_interval = row['min_interval']
                 
-            last_log = c.execute("SELECT timestamp FROM ScraperLogs WHERE url_id = ? AND status_code = 200 ORDER BY id DESC LIMIT 1", (u_id,)).fetchone()
+            # Preverimo zadnji uspešen sken v logih
+            last_log = c.execute("""
+                SELECT timestamp FROM ScraperLogs 
+                WHERE url_id = ? AND status_code = 200 
+                ORDER BY id DESC LIMIT 1
+            """, (u_id,)).fetchone()
             
+            # Pripravimo podatke za scraper
+            # 'url' ostane za tvoj izpis v konzoli, 'url_bin' pa za curl_cffi
+            entry_data = {
+                'url_id': u_id, 
+                'url': row['url'], 
+                'url_bin': row['url_bin'], 
+                'telegram_name': row['telegram_name']
+            }
+
             if not last_log:
-                pending.append({'url_id': u_id, 'url': row['url'], 'telegram_name': row['telegram_name']})
+                # Še nikoli skenirano (First Sync)
+                pending.append(entry_data)
             else:
                 try:
                     last_time = datetime.strptime(last_log['timestamp'], "%d.%m.%Y %H:%M:%S")
                     if (now - last_time).total_seconds() / 60 >= (current_interval - 0.2):
-                        pending.append({'url_id': u_id, 'url': row['url'], 'telegram_name': row['telegram_name']})
+                        pending.append(entry_data)
                 except:
-                    pending.append({'url_id': u_id, 'url': row['url'], 'telegram_name': row['telegram_name']})
+                    pending.append(entry_data)
                     
         conn.close()
         return pending
 
     
-    def add_search_url(self, telegram_id, url):
-        """Doda URL in vrne (status, url_id)."""
+    def add_search_url(self, telegram_id, url_string):
         conn = self.get_connection()
         c = conn.cursor()
         try:
-            c.execute("INSERT OR IGNORE INTO Urls (url) VALUES (?)", (url,))
-            url_id = c.execute("SELECT url_id FROM Urls WHERE url = ?", (url,)).fetchone()[0]
+            # 1. Čiščenje
+            url_clean = url_string.strip().strip('<>')
+            
+            # 2. Priprava binarne verzije (latin-1 ohrani originalne %8A znake)
+            url_binary = url_clean.encode('latin-1', 'ignore')
+            
+            # 3. Ustvarjanje hasha za unikatnost
+            import hashlib
+            url_hash = hashlib.md5(url_binary).hexdigest()
 
-            existing = c.execute("SELECT 1 FROM Tracking WHERE telegram_id = ? AND url_id = ?", 
-                                (telegram_id, url_id)).fetchone()
-            if existing:
-                return "exists", url_id
+            # 4. Vpis v bazo (vse tri stolpce hkrati)
+            c.execute("""
+                INSERT OR IGNORE INTO Urls (url, url_bin, url_hash) 
+                VALUES (?, ?, ?)
+            """, (url_clean, sqlite3.Binary(url_binary), url_hash))
+            
+            # 5. Pridobimo url_id
+            res = c.execute("SELECT url_id FROM Urls WHERE url_hash = ?", (url_hash,)).fetchone()
+            url_id = res[0]
 
-            c.execute("INSERT INTO Tracking (telegram_id, url_id) VALUES (?, ?)", (telegram_id, url_id))
+            # 6. Povežemo z uporabnikom
+            c.execute("INSERT OR IGNORE INTO Tracking (telegram_id, url_id) VALUES (?, ?)", (telegram_id, url_id))
+            
             conn.commit()
             return True, url_id
         except Exception as e:
-            print(f"Napaka v add_search_url: {e}")
+            print(f"DB Error: {e}")
             return False, None
         finally:
             conn.close()
@@ -1142,13 +1182,24 @@ class Database:
         return expired
 
     def deactivate_user_after_expiry(self, telegram_id):
-        """Deaktivira uporabnika v bazi, ko mu poteče naročnina."""
+        """Deaktivira uporabnika in resetira njegove limite na privzeto ob poteku naročnine."""
         conn = self.get_connection()
         c = conn.cursor()
-        # Nastavimo is_active na 0 in počistimo paket, da vemo, da je potekel
-        c.execute("UPDATE Users SET is_active = 0 WHERE telegram_id = ?", (telegram_id,))
-        conn.commit()
-        conn.close()
+        try:
+            # Ob deaktivaciji postavimo vse na 'NONE' in limite na 1 URL / 15 min
+            c.execute("""
+                UPDATE Users 
+                SET is_active = 0, 
+                    subscription_type = 'NONE', 
+                    max_urls = 1, 
+                    scan_interval = 15
+                WHERE telegram_id = ?
+            """, (telegram_id,))
+            conn.commit()
+        except Exception as e:
+            print(f"Napaka pri samodejni deaktivaciji uporabnika {telegram_id}: {e}")
+        finally:
+            conn.close()
 
     
     def is_ad_new(self, content_id):
