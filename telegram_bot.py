@@ -891,47 +891,58 @@ async def admin_errors_command(update: telegram.Update, context: telegram.ext.Co
     from config import ADMIN_ID
     if str(update.effective_user.id) != str(ADMIN_ID): return
 
+    # 1. Določimo limit (privzeto 10, ali pa tisto kar napišeš: /errors 20)
+    limit = 10
+    if context.args and context.args[0].isdigit():
+        limit = int(context.args[0])
+        # Varnostna omejitev, da sporočilo ni predolgo za Telegram
+        if limit > 50: limit = 50
+
     conn = db.get_connection()
+    conn.row_factory = sqlite3.Row
     c = conn.cursor()
     
-    # Zadnjih 10 unikatnih napak z imenom uporabnika
+    # 2. Pridobimo zadnjih N napak z imeni uporabnikov
     query = """
-        SELECT u.telegram_name, sl.url_id, sl.error_msg, sl.timestamp
+        SELECT u.telegram_name, sl.url_id, sl.status_code, sl.error_msg, sl.timestamp
         FROM ScraperLogs sl
         JOIN Tracking t ON sl.url_id = t.url_id
         JOIN Users u ON t.telegram_id = u.telegram_id
         WHERE sl.status_code != 200
         ORDER BY sl.id DESC
-        LIMIT 10
+        LIMIT ?
     """
-    errors = c.execute(query).fetchall()
+    errors = c.execute(query, (limit,)).fetchall()
     conn.close()
 
     if not errors:
-        await update.message.reply_text("✅ V zadnjem času ni bilo napak.")
+        await update.message.reply_text(f"✅ V bazi ni zabeleženih napak (preverjeno zadnjih {limit}).")
         return
 
-    msg = "❌ <b>ZADNJE NAPAKE SKENERJA</b>\n"
+    msg = f"❌ <b>ZADNJE NAPAKE ({len(errors)})</b>\n"
     msg += "━━━━━━━━━━━━━━━━━━\n\n"
 
     for e in errors:
-        name = e[0] or "Neznan"
-        u_id = e[1]
-        timestamp = e[3].split(' ')[1]
-        err_detail = e[2]
+        name = e['telegram_name'] or "Neznan"
+        u_id = e['url_id']
+        timestamp = e['timestamp'].split(' ')[1] # Samo ura
+        err_detail = e['error_msg']
+        code = e['status_code']
         
-        # Izbira ikone glede na tip napake
-        if "403" in err_detail:
+        # 3. Pametne ikone glede na tvojo novo diagnostiko
+        if code == 403:
             icon = "🛡️" # Cloudflare
-        elif "Invalid" in err_detail or "format" in err_detail or "CURL" in err_detail:
-            icon = "🔗" # Napačen link
+        elif code == 0:
+            icon = "🔗" # Napačen link / Network
+        elif code >= 500:
+            icon = "🛠️" # Server error
         else:
             icon = "⚠️" # Ostalo
 
         msg += f"{icon} <b>{name}</b> (ID: {u_id})\n"
-        msg += f"🕒 {timestamp} | 📝 <code>{err_detail}</code>\n"
+        msg += f"🕒 {timestamp} | <code>{err_detail}</code>\n"
         msg += "──────────────────\n"
-        
+
     await update.message.reply_text(msg, parse_mode="HTML")
 
 
