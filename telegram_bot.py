@@ -913,12 +913,25 @@ async def admin_errors_command(update: telegram.Update, context: telegram.ext.Co
 
     msg = "❌ <b>ZADNJE NAPAKE SKENERJA</b>\n"
     msg += "━━━━━━━━━━━━━━━━━━\n\n"
-    for e in errors:
-        msg += f"👤 {e[0]} (ID: {e[1]})\n"
-        msg += f"🕒 {e[3].split(' ')[1]}\n" # Samo čas
-        msg += f"📝 <code>{e[2]}</code>\n"
-        msg += "──────────────────\n"
 
+    for e in errors:
+        name = e[0] or "Neznan"
+        u_id = e[1]
+        timestamp = e[3].split(' ')[1]
+        err_detail = e[2]
+        
+        # Izbira ikone glede na tip napake
+        if "403" in err_detail:
+            icon = "🛡️" # Cloudflare
+        elif "Invalid" in err_detail or "format" in err_detail or "CURL" in err_detail:
+            icon = "🔗" # Napačen link
+        else:
+            icon = "⚠️" # Ostalo
+
+        msg += f"{icon} <b>{name}</b> (ID: {u_id})\n"
+        msg += f"🕒 {timestamp} | 📝 <code>{err_detail}</code>\n"
+        msg += "──────────────────\n"
+        
     await update.message.reply_text(msg, parse_mode="HTML")
 
 
