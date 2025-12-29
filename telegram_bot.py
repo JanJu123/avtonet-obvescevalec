@@ -208,7 +208,7 @@ async def list_command(update: telegram.Update, context: telegram.ext.ContextTyp
         status_emoji = "✅" if u['active'] else "⏸️"
         
         msg += f"{status_emoji} <b>ID: {u['url_id']}</b> - "
-        msg += f"<a href='{u['url_text']}'>Odpri iskanje na Avto.net</a>\n"
+        msg += f"<a href='{u['url']}'>Odpri iskanje na Avto.net</a>\n"
         
         if not u['active']:
             msg += "<i>(Zamrznjeno - nad limitom paketa)</i>\n"
