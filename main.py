@@ -239,7 +239,7 @@ def main():
     application.add_handler(telegram.ext.CommandHandler("check_user", check_user_command))
     application.add_handler(telegram.ext.CommandHandler("proxy_stats", proxy_stats_command))
     application.add_handler(telegram.ext.CommandHandler("admin_overview", admin_overview_command))
-    application.add_handler(telegram.ext.CommandHandler("error", admin_errors_command))
+    application.add_handler(telegram.ext.CommandHandler("errors", admin_errors_command))
 
     application.add_handler(telegram.ext.CommandHandler("send", send_dm_command))
     application.add_handler(telegram.ext.CommandHandler("add_url_user", add_url_user_command))
