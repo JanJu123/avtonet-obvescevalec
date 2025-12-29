@@ -419,36 +419,36 @@ class Database:
         return rows
 
     def get_admin_stats(self):
-        """Vrne statistiko za DANES (od 00:00) in za tekoči mesec."""
+        """Vrne statistiko za DANES (od 00:00) in za tekoči mesec s pravilnim formatom datuma."""
         conn = self.get_connection()
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
 
         stats = {}
+        
+        # Današnji datum v tvojem formatu za filter (npr. '29.12.2025%')
+        today_prefix = datetime.now().strftime("%d.%m.%Y") + "%"
+        
+        # Trenutni mesec in leto za mesečno statistiko
+        current_month = datetime.now().strftime("%m")
+        current_year = datetime.now().strftime("%Y")
 
         # --- OSNOVNE ŠTEVILKE ---
         stats['vsi_skenirani'] = c.execute("SELECT COUNT(*) FROM ScrapedData").fetchone()[0]
         stats['aktivni_urlji'] = c.execute("SELECT COUNT(*) FROM Urls").fetchone()[0]
         stats['skupaj_uporabnikov'] = c.execute("SELECT COUNT(*) FROM Users").fetchone()[0]
 
-        # --- STATISTIKA DANES (Od 00:00 dalje) ---
-        stats['requesti_danes'] = c.execute("""
-            SELECT COUNT(*) FROM ScraperLogs
-            WHERE timestamp >= datetime('now', 'start of day')
-        """).fetchone()[0]
+        # --- STATISTIKA DANES (Popravljeno z LIKE) ---
+        res_danes = c.execute("""
+            SELECT COUNT(*), SUM(bytes_used) FROM ScraperLogs
+            WHERE timestamp LIKE ?
+        """, (today_prefix,)).fetchone()
 
-        bytes_danes = c.execute("""
-            SELECT SUM(bytes_used) FROM ScraperLogs
-            WHERE timestamp >= datetime('now', 'start of day')
-        """).fetchone()[0] or 0
-        stats['bytes_danes'] = bytes_danes
-        # Strošek izračunan na enak način kot v proxy analizi
+        stats['requesti_danes'] = res_danes[0] or 0
+        bytes_danes = res_danes[1] or 0
         stats['cost_danes'] = (bytes_danes / (1024**3)) * 5.0
 
         # --- MESEČNA STATISTIKA (Tekoči mesec) ---
-        current_month = c.execute("SELECT strftime('%m', 'now')").fetchone()[0]
-        current_year = c.execute("SELECT strftime('%Y', 'now')").fetchone()[0]
-
         query_month_count = """
             SELECT COUNT(*), SUM(bytes_used) FROM ScraperLogs 
             WHERE substr(timestamp, 4, 2) = ? AND substr(timestamp, 7, 4) = ?
@@ -458,25 +458,27 @@ class Database:
         bytes_mesec = res_month[1] or 0
         stats['cost_mesec'] = (bytes_mesec / (1024**3)) * 5.0
 
-        # --- PORABA PO UPORABNIKIH (DANES - od 00:00) ---
+        # --- PORABA PO UPORABNIKIH (DANES - Popravljeno z LIKE) ---
         query_breakdown_day = """
             SELECT 
                 u.telegram_name,
+                u.telegram_id,
                 COUNT(sl.id) as cnt
             FROM Users u
             JOIN Tracking t ON u.telegram_id = t.telegram_id
             JOIN ScraperLogs sl ON sl.url_id = t.url_id
-            WHERE sl.timestamp >= datetime('now', 'start of day')
+            WHERE sl.timestamp LIKE ?
             GROUP BY u.telegram_id
             ORDER BY cnt DESC
         """
-        c.execute(query_breakdown_day)
+        c.execute(query_breakdown_day, (today_prefix,))
         stats['user_breakdown_day'] = [dict(row) for row in c.fetchall()]
 
         # --- PORABA PO UPORABNIKIH (MESEC) ---
         query_breakdown_month = """
             SELECT 
                 u.telegram_name, 
+                u.telegram_id,
                 COUNT(sl.id) as cnt
             FROM Users u
             JOIN Tracking t ON u.telegram_id = t.telegram_id

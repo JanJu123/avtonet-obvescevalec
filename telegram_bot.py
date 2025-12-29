@@ -182,7 +182,12 @@ async def list_command(update: telegram.Update, context: telegram.ext.ContextTyp
     user_info = db.get_user_subscription_info(user_id)
 
     if not urls:
-        await update.message.reply_text("Trenutno nimaš shranjenih iskanj. Dodaj jih z <code>/add_url</code>.", parse_mode="HTML")
+        msg = (
+            "<b>Trenutno nimaš shranjenih iskanj.</b>\n\n"
+            "Novo iskanje dodaš z ukazom:\n"
+            "<code>/add_url URL_NASLOV</code>"
+        )
+        await update.message.reply_text(msg, parse_mode="HTML")
         return
 
     msg = "📋 <b>TVOJA ISKANJA</b>\n"
@@ -190,7 +195,7 @@ async def list_command(update: telegram.Update, context: telegram.ext.ContextTyp
     
     for u in urls:
         status_emoji = "✅" if u['active'] else "⏸️"
-        # Skrajšamo link za prikaz, da ne smeti po ekranu
+        
         msg += f"{status_emoji} <b>ID: {u['url_id']}</b> - "
         msg += f"<a href='{u['url']}'>Odpri iskanje na Avto.net</a>\n"
         
@@ -201,13 +206,19 @@ async def list_command(update: telegram.Update, context: telegram.ext.ContextTyp
     # Podatki o zasedenosti
     if user_info:
         msg += f"\n📊 Zasedenost: <b>{len(urls)} / {user_info['max_urls']}</b> mest\n"
-        msg += f"📦 Paket: <b>{user_info['subscription_type']}</b>"
+        msg += f"📦 Paket: <b>{user_info['subscription_type']}</b>\n"
         
         if len(urls) > user_info['max_urls']:
-            msg += "\n\n⚠️ Nekatera iskanja so zamrznjena. Za aktivacijo nadgradi paket!"
+            msg += "\n⚠️ <b>Nekatera iskanja so zamrznjena.</b> Za aktivacijo vseh mest nadgradi paket!"
+
+    # --- DODANO NAVODILO ZA ODSTRANITEV ---
+    msg += "\n\n🗑️ <b>ODSTRANITEV ISKANJA:</b>\n"
+    msg += "Za izbris uporabi ukaz <code>/remove_url</code> in ID številko.\n"
+    msg += "Primer: <code>/remove_url {u['url_id']}</code>" if urls else "Primer: <code>/remove_url 5</code>"
 
     # disable_web_page_preview prepreči tiste velike slike pod sporočilom
     await update.message.reply_text(msg, parse_mode="HTML", disable_web_page_preview=True)
+    
 
 
 async def info_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
