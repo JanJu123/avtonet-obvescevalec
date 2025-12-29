@@ -9,7 +9,7 @@ from telegram.ext import CallbackQueryHandler
 from telegram_bot import start_command, list_command, add_url_command, remove_url_command, info_command, activate_user, \
     deactivate_user, admin_stats_command, admin_help_command, broadcast_command, list_users_admin, admin_logs_command, \
     health_command, check_user_command, proxy_stats_command, packages_command, help_command, post_init, server_status_command, \
-    admin_overview_command, send_dm_command, add_url_user_command, button_callback_handler
+    admin_overview_command, send_dm_command, add_url_user_command, button_callback_handler, admin_errors_command
 
 from dotenv import load_dotenv
 import os
@@ -239,6 +239,7 @@ def main():
     application.add_handler(telegram.ext.CommandHandler("check_user", check_user_command))
     application.add_handler(telegram.ext.CommandHandler("proxy_stats", proxy_stats_command))
     application.add_handler(telegram.ext.CommandHandler("admin_overview", admin_overview_command))
+    application.add_handler(telegram.ext.CommandHandler("error", admin_errors_command))
 
     application.add_handler(telegram.ext.CommandHandler("send", send_dm_command))
     application.add_handler(telegram.ext.CommandHandler("add_url_user", add_url_user_command))

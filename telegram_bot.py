@@ -887,6 +887,42 @@ async def add_url_user_command(update: telegram.Update, context: telegram.ext.Co
 
 
 
+async def admin_errors_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    from config import ADMIN_ID
+    if str(update.effective_user.id) != str(ADMIN_ID): return
+
+    conn = db.get_connection()
+    c = conn.cursor()
+    
+    # Zadnjih 10 unikatnih napak z imenom uporabnika
+    query = """
+        SELECT u.telegram_name, sl.url_id, sl.error_msg, sl.timestamp
+        FROM ScraperLogs sl
+        JOIN Tracking t ON sl.url_id = t.url_id
+        JOIN Users u ON t.telegram_id = u.telegram_id
+        WHERE sl.status_code != 200
+        ORDER BY sl.id DESC
+        LIMIT 10
+    """
+    errors = c.execute(query).fetchall()
+    conn.close()
+
+    if not errors:
+        await update.message.reply_text("✅ V zadnjem času ni bilo napak.")
+        return
+
+    msg = "❌ <b>ZADNJE NAPAKE SKENERJA</b>\n"
+    msg += "━━━━━━━━━━━━━━━━━━\n\n"
+    for e in errors:
+        msg += f"👤 {e[0]} (ID: {e[1]})\n"
+        msg += f"🕒 {e[3].split(' ')[1]}\n" # Samo čas
+        msg += f"📝 <code>{e[2]}</code>\n"
+        msg += "──────────────────\n"
+
+    await update.message.reply_text(msg, parse_mode="HTML")
+
+
+
 async def button_callback_handler(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     """Upravlja klike na gumbe pod sporočili."""
     query = update.callback_query
@@ -937,7 +973,8 @@ async def post_init(application: telegram.ext.Application) -> None:
         BotCommand("add_url_user", "➕ Dodaj URL drugemu uporabniku (ID URL)"),
         BotCommand("send", "✉️ Pošlji direktno sporočilo (ID TEKST)"),
         BotCommand("logs", "📜 Zadnje aktivnosti"),
-        BotCommand("broadcast", "📢 Pošlji vsem obvestilo")
+        BotCommand("broadcast", "📢 Pošlji vsem obvestilo"),
+        BotCommand("errors", "Pošlji zadnjih par errorjev")
     ]
     
     try:

@@ -431,11 +431,11 @@ class Database:
         stats = {}
         
         # Današnji datum v tvojem formatu za filter (npr. '29.12.2025%')
-        today_prefix = datetime.now().strftime("%d.%m.%Y") + "%"
+        today_prefix = datetime.datetime.now().strftime("%d.%m.%Y") + "%"
         
         # Trenutni mesec in leto za mesečno statistiko
-        current_month = datetime.now().strftime("%m")
-        current_year = datetime.now().strftime("%Y")
+        current_month = datetime.datetime.now().strftime("%m")
+        current_year = datetime.datetime.now().strftime("%Y")
 
         # --- OSNOVNE ŠTEVILKE ---
         stats['vsi_skenirani'] = c.execute("SELECT COUNT(*) FROM ScrapedData").fetchone()[0]
@@ -746,22 +746,25 @@ class Database:
     
 
     def get_admin_health_stats(self):
-        """Vrne povzetek delovanja v zadnjih 24 urah."""
         conn = self.get_connection()
-        cursor = conn.cursor()
-        # Izračunamo povprečno trajanje, skupno porabo in število napak (status != 200)
-        cursor.execute("""
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+
+        # Današnji datum za filter
+        today_prefix = datetime.now().strftime("%d.%m.%Y") + "%"
+
+        query = """
             SELECT 
                 COUNT(*) as total_scans,
                 AVG(duration) as avg_time,
                 SUM(bytes_used) as total_bytes,
                 SUM(CASE WHEN status_code != 200 THEN 1 ELSE 0 END) as errors
-            FROM ScraperLogs 
-            WHERE timestamp >= datetime('now', '-1 day', 'localtime')
-        """)
-        row = cursor.fetchone()
+            FROM ScraperLogs
+            WHERE timestamp LIKE ?
+        """
+        row = c.execute(query, (today_prefix,)).fetchone()
         conn.close()
-        return row
+        return dict(row) if row else None
 
     def get_user_diagnostic(self, t_id):
         """Vrne vse info o uporabniku za diagnozo."""
