@@ -41,7 +41,7 @@ async def start_command(update: telegram.Update, context: telegram.ext.ContextTy
             "🚀 Sistem mu je avtomatsko podelil <b>TRIAL</b> paket."
         )
         try:
-            await context.bot.send_message(chat_id=ADMIN_ID, text=admin_alert, parse_mode="HTML")
+            await context.bot.send_message(chat_id=int(ADMIN_ID), text=admin_alert, parse_mode="HTML")
         except:
             pass # Če tebi ne more poslati, ne ustaviš bota za stranko
 
