@@ -214,11 +214,16 @@ class Scraper:
                 u_id = entry['url_id']
                 u_name = entry.get('telegram_name', 'Neznan')
                 
-                # --- KLJUČNI DEL: PRIPRAVA BINARNEGA URL-ja ---
-                # Vzamemo bajte iz baze in jih dekodiramo v latin-1 string za curl_cffi
-                # To zagotovi, da %8A ostane %8A in se ne spremeni v UTF-8 kvačkanje
-                raw_url_bytes = entry['url_bin']
-                final_url = raw_url_bytes.decode('latin-1')
+                # VARNOSTNI POPRAVEK: Preverimo, če url_bin sploh obstaja v entryju
+                if 'url_bin' in entry and entry['url_bin']:
+                    raw_url_bytes = entry['url_bin']
+                    final_url = raw_url_bytes.decode('latin-1')
+                else:
+                    # Če url_bin manjka, ga generiramo iz navadnega url-ja
+                    final_url = entry['url'].strip().strip('<>').replace(' ', '%20')
+                    print(f"⚠️ [SCRAPER] URL ID {u_id} nima url_bin. Generiram fallback...")
+
+
 
                 print(f"{B_CYAN}[{get_time()}] 🔍 Skeniram URL ID {u_id} (Uporabnik: {u_name})...{B_END}")
                 

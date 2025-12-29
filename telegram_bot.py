@@ -128,7 +128,17 @@ async def add_url_command(update: telegram.Update, context: telegram.ext.Context
             sync_msg = await msg_obj.reply_text("⏳ Sinhroniziram trenutne oglase (tiha sinhronizacija)...")
             try:
                 temp_scraper = Scraper(db)
-                pending_data = [{'url_id': new_url_id, 'url': fixed_url, 'telegram_name': t_name}]
+                # NOVO: Pripravimo še binarno verzijo za scraper
+                url_bin = fixed_url.encode('latin-1', 'ignore')
+                
+                # Dodamo 'url_bin' v seznam
+                pending_data = [{
+                    'url_id': new_url_id, 
+                    'url': fixed_url, 
+                    'url_bin': url_bin, # <--- TUKAJ JE MANJKALO!
+                    'telegram_name': t_name
+                }]
+                
                 await asyncio.to_thread(temp_scraper.run, pending_data)
                 
                 await sync_msg.edit_text(
