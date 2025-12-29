@@ -310,7 +310,7 @@ class Scraper:
             except Exception as e:
                 print(f"{B_RED}[{get_time()}] ❌ Kritična napaka pri URL {entry['url_id']}: {e}{B_END}")
             
-            time.sleep(random.uniform(1, 3))
+            time.sleep(random.uniform(2, 5))
 
 # --- TEST ---
 if __name__ == "__main__":
