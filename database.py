@@ -104,6 +104,7 @@ class Database:
         )
         """)
 
+        # 7. User Activity
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS UserActivity (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -112,6 +113,23 @@ class Database:
             details TEXT,
             timestamp DATETIME DEFAULT (strftime('%d.%m.%Y %H:%M:%S', 'now', 'localtime')),
             FOREIGN KEY (telegram_id) REFERENCES Users (telegram_id)
+        )
+        """)
+
+        # 8. Market Data
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS MarketData (
+            content_id TEXT PRIMARY KEY,    -- UNIQUE: isti oglas shranimo le enkrat
+            ime_avta TEXT,
+            cena TEXT,
+            leto_1_reg TEXT,
+            prevozenih TEXT,
+            gorivo TEXT,
+            menjalnik TEXT,
+            motor TEXT,
+            link TEXT,
+            raw_snippet TEXT,              -- Shranimo tisto, kar je AI dejansko bral (za debug)
+            created_at DATETIME DEFAULT (strftime('%d.%m.%Y %H:%M:%S', 'now', 'localtime'))
         )
         """)
 
@@ -1310,6 +1328,37 @@ class Database:
         rows = c.execute(query).fetchall()
         conn.close()
         return [dict(row) for row in rows]
+    
+
+
+
+    def insert_market_data(self, data):
+        """Shrani oglas v splošni arhiv trga za ML analitiko."""
+        conn = self.get_connection()
+        c = conn.cursor()
+        try:
+            c.execute("""
+                INSERT OR IGNORE INTO MarketData (
+                    content_id, ime_avta, cena, leto_1_reg, 
+                    prevozenih, gorivo, menjalnik, motor, link, raw_snippet
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                str(data.get('content_id')),
+                data.get('ime_avta'),
+                data.get('cena'),
+                data.get('leto_1_reg'),
+                data.get('prevozenih'),
+                data.get('gorivo'),
+                data.get('menjalnik'),
+                data.get('motor'),
+                data.get('link'),
+                data.get('text') # To je tisti očiščen snippet iz scraperja
+            ))
+            conn.commit()
+        except Exception as e:
+            print(f"❌ [DB ERROR] MarketData insert: {e}")
+        finally:
+            conn.close()
 
 if __name__ == "__main__":
     db = Database(db_name="test_bot.db")

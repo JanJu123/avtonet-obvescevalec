@@ -302,6 +302,7 @@ class Scraper:
                 # Shranjevanje v ScrapedData
                 for data in final_results:
                     self.db.insert_scraped_data(u_id, data)
+                    self.db.insert_market_data(data)
 
                 duration = round(time.time() - start_time, 2)
                 self.db.log_scraper_run(u_id, 200, len(final_results), duration, bytes_used, "Success")
@@ -310,7 +311,7 @@ class Scraper:
             except Exception as e:
                 print(f"{B_RED}[{get_time()}] ❌ Kritična napaka pri URL {entry['url_id']}: {e}{B_END}")
             
-            time.sleep(random.uniform(2, 5))
+            time.sleep(random.uniform(1.5, 4))
 
 # --- TEST ---
 if __name__ == "__main__":
