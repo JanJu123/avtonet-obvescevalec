@@ -725,21 +725,19 @@ class Database:
         conn = self.get_connection()
         c = conn.cursor()
         try:
-            # Pripravimo oba datuma
-            now = datetime.datetime.now()
-            ts_slo = now.strftime("%d.%m.%Y %H:%M:%S")
+            # Pripravimo SLO format za tvoj admin pregled
+            now_slo = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
             
-            # SQL ukaz zdaj vključuje oba stolpca
-            # datetime('now') v SQLite avtomatsko generira UTC čas v formatu YYYY-MM-DD HH:MM:SS
+            # timestamp_utc se bo vpisal samodejno, ker ga NE navedemo v INSERT
             c.execute("""
                 INSERT INTO ScraperLogs (
                     url_id, status_code, found_count, duration, 
-                    bytes_used, error_msg, timestamp, timestamp_utc
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-            """, (url_id, status_code, found_count, duration, bytes_used, error_msg, ts_slo))
+                    bytes_used, error_msg, timestamp
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (url_id, status_code, found_count, duration, bytes_used, error_msg, now_slo))
             conn.commit()
         except Exception as e:
-            print(f"❌ [DB ERROR] Log Scraper Run: {e}")
+            print(f"❌ [DB ERROR] log_scraper_run: {e}")
         finally:
             conn.close()
 
