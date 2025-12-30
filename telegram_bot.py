@@ -351,7 +351,7 @@ async def packages_command(update: telegram.Update, context: telegram.ext.Contex
     msg += f"🆔 <b>Tvoj ID za aktivacijo:</b> <code>{user_id}</code>\n"
     msg += "<i>(Klikni na številko zgoraj, da jo kopiraš)</i>\n\n"
     
-    msg += '💳 <b>Za nakup piši adminu:</b> <a href="https://t.me/JanJu_123">Jan Jurhar</a>'
+    msg += '💳 <b>Za nakup piši adminu:</b> <a href="https://t.me/JanJu_123">JanJu</a>'
     
     await target_msg.reply_text(msg, parse_mode="HTML", disable_web_page_preview=True)
 
