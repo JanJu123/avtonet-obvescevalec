@@ -155,7 +155,7 @@ class Scraper:
                     base_url = entry['url_bin'].decode('latin-1') if 'url_bin' in entry else entry['url']
                     is_first_sync = self.db.is_first_scan(u_id)
                     
-                    print(f"  {B_CYAN}🔍 Pregled: {u_name} (ID: {u_id}) {'[SYNC]' if is_first_sync else ''}{B_END}")
+                    print(f"  {B_CYAN}   Pregled: {u_name} (ID: {u_id}) {'[SYNC]' if is_first_sync else ''}{B_END}")
 
                     current_page, max_pages = 1, (4 if u_id == 0 else 1)
                     total_bytes = 0
@@ -257,7 +257,7 @@ class Scraper:
                         # Tukaj prav tako NE kličemo bulk_add_sent_ads!
                         self.db.insert_scraped_data(target_u_id, ad_data)
 
-        print(f"{B_GREEN}[{get_time()}] ✅ CIKEL KONČAN. Prihranjenih {total_saved_by_cache} AI klicev.{B_END}")
+        print(f"{B_GREEN}[{get_time()}]    CIKEL KONČAN. Prihranjenih {total_saved_by_cache} AI klicev.{B_END}")
 
 # --- TEST ---
 if __name__ == "__main__":
