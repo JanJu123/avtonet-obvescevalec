@@ -720,15 +720,27 @@ class Database:
 
     # --- LOGGING METODE ---
 
-    def log_scraper_run(self, url_id, status, found, duration, bytes_used, error=""):
+    def log_scraper_run(self, url_id, status_code, found_count, duration, bytes_used, error_msg):
         conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO ScraperLogs (url_id, status_code, found_count, duration, bytes_used, error_msg)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (url_id, status, found, duration, bytes_used, error))
-        conn.commit()
-        conn.close()
+        c = conn.cursor()
+        try:
+            # Pripravimo oba datuma
+            now = datetime.datetime.now()
+            ts_slo = now.strftime("%d.%m.%Y %H:%M:%S")
+            
+            # SQL ukaz zdaj vključuje oba stolpca
+            # datetime('now') v SQLite avtomatsko generira UTC čas v formatu YYYY-MM-DD HH:MM:SS
+            c.execute("""
+                INSERT INTO ScraperLogs (
+                    url_id, status_code, found_count, duration, 
+                    bytes_used, error_msg, timestamp, timestamp_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            """, (url_id, status_code, found_count, duration, bytes_used, error_msg, ts_slo))
+            conn.commit()
+        except Exception as e:
+            print(f"❌ [DB ERROR] Log Scraper Run: {e}")
+        finally:
+            conn.close()
 
     def log_user_activity(self, telegram_id, command, details=""):
         """Zapiše aktivnost uporabnika v bazo."""
@@ -958,7 +970,7 @@ class Database:
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         
-        # 1. SQL Query ostane isti (dobimo vse aktivne)
+        # Pridobimo vse aktivne URL-je z RankedTracking (to ostane isto)
         query = """
             WITH RankedTracking AS (
                 SELECT 
@@ -982,24 +994,28 @@ class Database:
         active_urls = c.execute(query).fetchall()
         pending = []
         
-        # --- NOVO: Uporabimo UNIX timestamp za primerjavo (neprebojno!) ---
-        # datetime('now') v SQLite je vedno UTC
-        # 'strftime('%s', ...)' pretvori v sekunde
+        is_night = 0 <= datetime.datetime.now().hour < 7
+
         for row in active_urls:
             u_id = row['url_id']
-            interval_min = row['min_interval']
             
-            # Preverimo zadnji sken v SEKUNDAH (zastonj in hitro)
-            # Gledamo status 200 (uspeh) ALI karkoli, da ne loopamo napak
-            last_scan_data = c.execute("""
+            # Določimo interval (Night mode)
+            if is_night:
+                current_interval = 15 if row['has_ultra'] else 30
+            else:
+                current_interval = row['min_interval']
+                
+            # MAGIJA: Izračunamo razliko v minutah direktno v SQLite (neustavljivo!)
+            # strftime('%s', ...) vrne sekunde od leta 1970
+            last_scan = c.execute("""
                 SELECT (strftime('%s', 'now') - strftime('%s', timestamp_utc)) / 60 as mins_ago
                 FROM ScraperLogs 
-                WHERE url_id = ? 
+                WHERE url_id = ? AND timestamp_utc IS NOT NULL
                 ORDER BY id DESC LIMIT 1
             """, (u_id,)).fetchone()
             
-            # Če še ni bilo skena ali je minilo dovolj časa
-            if last_scan_data is None or last_scan_data[0] >= (interval_min - 0.5):
+            # Če še nikoli ni bil skeniran ali je minilo dovolj časa
+            if last_scan is None or last_scan['mins_ago'] >= (current_interval - 0.1):
                 pending.append({
                     'url_id': u_id, 
                     'url': row['url'], 
