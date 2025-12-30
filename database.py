@@ -725,15 +725,13 @@ class Database:
         conn = self.get_connection()
         c = conn.cursor()
         try:
-            # Pripravimo SLO format za tvoj admin pregled
-            now_slo = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
-            
-            # timestamp_utc se bo vpisal samodejno, ker ga NE navedemo v INSERT
+            now_slo = datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+            # Ročno vpišemo datetime('now') v SQL, kar je v SQLite vedno UTC
             c.execute("""
                 INSERT INTO ScraperLogs (
                     url_id, status_code, found_count, duration, 
-                    bytes_used, error_msg, timestamp
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    bytes_used, error_msg, timestamp, timestamp_utc
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
             """, (url_id, status_code, found_count, duration, bytes_used, error_msg, now_slo))
             conn.commit()
         except Exception as e:
@@ -969,7 +967,7 @@ class Database:
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         
-        # Pridobimo vse aktivne URL-je z RankedTracking (to ostane isto)
+        # Tvoj RankedTracking query ostane isti
         query = """
             WITH RankedTracking AS (
                 SELECT 
@@ -992,29 +990,27 @@ class Database:
         
         active_urls = c.execute(query).fetchall()
         pending = []
-        
-        is_night = 0 <= datetime.datetime.now().hour < 7
+        now_hour = datetime.datetime.now().hour
+        is_night = 0 <= now_hour < 7
 
         for row in active_urls:
             u_id = row['url_id']
-            
-            # Določimo interval (Night mode)
+            interval_min = 15 if is_night and not row['has_ultra'] else (30 if is_night else row['min_interval'])
+            # Popravek: za tvoj ultra night mode
             if is_night:
-                current_interval = 15 if row['has_ultra'] else 30
+                interval_min = 15 if row['has_ultra'] else 30
             else:
-                current_interval = row['min_interval']
-                
-            # MAGIJA: Izračunamo razliko v minutah direktno v SQLite (neustavljivo!)
-            # strftime('%s', ...) vrne sekunde od leta 1970
+                interval_min = row['min_interval']
+
+            # IZRAČUN RAZLIKE V MINUTAH (UTC)
             last_scan = c.execute("""
                 SELECT (strftime('%s', 'now') - strftime('%s', timestamp_utc)) / 60 as mins_ago
                 FROM ScraperLogs 
-                WHERE url_id = ? AND timestamp_utc IS NOT NULL
+                WHERE url_id = ? 
                 ORDER BY id DESC LIMIT 1
             """, (u_id,)).fetchone()
             
-            # Če še nikoli ni bil skeniran ali je minilo dovolj časa
-            if last_scan is None or last_scan['mins_ago'] >= (current_interval - 0.1):
+            if last_scan is None or last_scan['mins_ago'] >= (interval_min - 0.1):
                 pending.append({
                     'url_id': u_id, 
                     'url': row['url'], 
