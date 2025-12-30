@@ -293,16 +293,19 @@ class Scraper:
                                 final_results.append(ad_data)
 
                 # Manual Fallback
-                if not final_results:
-                    for item in new_ads_to_process:
-                        img_tag = item['row_soup'].find('img')
-                        img_url = img_tag.get('data-src') or img_tag.get('src') if img_tag else None
-                        final_results.append(self._manual_parse_row(item['row_soup'], item['id'], item['link'], img_url))
-
-                # Shranjevanje v ScrapedData
                 for data in final_results:
+                    # 1. Shranimo za uporabnika (za Telegram obvestilo)
                     self.db.insert_scraped_data(u_id, data)
-                    self.db.insert_market_data(data, raw_snippet=orig['text'])
+                    
+                    # 2. Poiščemo specifičen surovi tekst za TA oglas
+                    # S str() preprečimo napake, če je ID nekje int, drugje string
+                    orig = next((x for x in new_ads_to_process if str(x['id']) == str(data.get('content_id'))), None)
+                    
+                    # Določimo tekst, ki ga bomo shranili v arhiv
+                    current_raw_text = orig['text'] if orig else "Neznano"
+                    
+                    # 3. Shranimo v trajni arhiv MarketData
+                    self.db.insert_market_data(data, current_raw_text)
 
                 duration = round(time.time() - start_time, 2)
                 self.db.log_scraper_run(u_id, 200, len(final_results), duration, bytes_used, "Success")
