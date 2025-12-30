@@ -1,88 +1,51 @@
 import json
+import asyncio
+from openai import AsyncOpenAI # UPORABIMO ASYNC KLIENTA
+from config import OPENROUTER_API_KEY, AI_MODEL
 import time
-from openai import OpenAI
-
-# Poskusi uvoziti ključ, če ne gre, uporabi ročni vnos za test
-try:
-    from config import OPENROUTER_API_KEY, AI_MODEL
-except ImportError:
-    OPENROUTER_API_KEY = "sk-or-v1-..." # Tvoj ključ tukaj, če ne uporabljaš config.py
-    AI_MODEL = "google/gemini-flash-1.5-8b"
 
 class AIHandler:
     def __init__(self):
-        self.client = OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=OPENROUTER_API_KEY,
-        )
+        # Ustvarimo seznam asinhronih klientov (vsak s svojo ekipo/ključem)
+        self.clients = [
+            AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=key)
+            for key in OPENROUTER_API_KEY
+        ]
         self.model = AI_MODEL
-        self.call_count_today = 0 # Varnostna varovalka
 
-    def extract_ads_batch(self, raw_snippets):
-        """
-        Glavna funkcija: Sprejme seznam oglasov (tekst) in vrne seznam JSON objektov.
-        """
-        if not raw_snippets:
-            return []
-
-        # Priprava teksta za AI
+    async def process_single_batch(self, batch, client_index):
+        """Obdela en paket oglasov z določenim klientom/ključem."""
+        client = self.clients[client_index % len(self.clients)]
+        
         combined_text = ""
-        for idx, item in enumerate(raw_snippets):
+        for idx, item in enumerate(batch):
             combined_text += f"OGLAS #{idx+1} [ID:{item['id']}]: {item['text']}\n---\n"
 
-        prompt = f"""
-        STREŽNIŠKO NAVODILO: Si robotski ekstraktor podatkov. 
-        Tvoj odgovor mora biti IZKLJUČNO veljaven JSON seznam objektov brez dodatnega besedila.
-
-        NUJNA PRAVILA ZA FORMATIRANJE:
-        1. "content_id": Vrni točno številko iz oznake [ID:xxxx].
-        2. "ime_avta": Čisto ime (npr. "Audi A4 2.0 TDI"). Odstrani smeti kot so "NOVO", "AKCIJA", "1. LASTNIK".
-        3. "cena": Številka s piko in znak €, npr. "12.490 €". Če piše 'Pokličite', napiši 'Pokličite'.
-        4. "leto_1_reg": Samo 4-mestna številka leta, npr. "2021".
-        5. "prevozenih": Številka s piko in 'km', npr. "145.000 km".
-        6. "gorivo": Mala tiskana beseda (diesel, bencin, hibrid, elektro).
-        7. "menjalnik": "avtomatski" ali "ročni".
-        8. "motor": Prostornina in moč, npr. "1968 ccm, 110 kW / 150 KM".
-
-        VAROVALKA: Če podatka ne najdeš, uporabi vrednost "Neznano". 
-        NIKOLI ne spreminjaj imen ključev (content_id, ime_avta, itd.), sicer sistem ne bo deloval.
-
-        - Če vidiš oznako 'Starost: NOVO', za letnik uporabi trenutno leto (2025) in za kilometre '0 km'.
-        - Ceno vzemi iz polja AKCIJSKA CENA ali tisto, ki je najnižja v besedilu."
-
-        PODATKI ZA OBDELAVO:
-        {combined_text}
-        """
+        prompt = f"Izlušči JSON seznam objektov. Ključi: content_id, ime_avta, cena, leto_1_reg, prevozenih, gorivo, menjalnik, motor. Podatki: {combined_text}"
 
         try:
-            # Klic na OpenRouter (Plačljiv model, zato nima limitov)
-            response = self.client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "Si precizen ekstraktor podatkov iz avtomobilskih oglasov. Vračaš samo čist JSON seznam."},
+                    {"role": "system", "content": "Si robotski ekstraktor. Vračaš samo čist JSON seznam."},
                     {"role": "user", "content": prompt}
                 ],
                 response_format={"type": "json_object"},
-                timeout=15
+                timeout=45
             )
             
-            self.call_count_today += 1
             content = response.choices[0].message.content
             data = json.loads(content)
             
-            # Normalizacija odgovora (da vedno dobimo seznam)
+            # Normalizacija v seznam
             if isinstance(data, dict):
-                # Če AI zapakira seznam v ključ (npr. "ads": [...])
                 for key in data:
-                    if isinstance(data[key], list):
-                        return data[key]
+                    if isinstance(data[key], list): return data[key]
                 return [data]
             return data
-
         except Exception as e:
-            print(f"❌ [AI ERROR] Napaka: {e}")
-            return None
-
+            print(f"❌ [AI ERROR] Ključ {client_index + 1} odpovedal: {e}")
+            return []
 
 
 
