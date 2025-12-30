@@ -196,19 +196,33 @@ class Scraper:
                                 continue
                             
                             # B) CACHE (Arhiv)
-                            existing = self.db.get_market_data_by_id(cid)
-                            if existing:
-                                total_saved_by_cache += 1
-                                self.db.bulk_add_sent_ads(u_id, [cid])
-                                if u_id != 0:
-                                    existing['slika_url'] = ad['slika_url'] # Sveža slika
-                                    self.db.insert_scraped_data(u_id, existing)
-                                continue
+                            # V scraper.py znotraj run metode popravi ta del:
 
-                            # C) NOVO ZA AI
+                        # B) CACHE (Arhiv)
+                        existing = self.db.get_market_data_by_id(cid)
+                        if existing:
+                            total_saved_by_cache += 1
+                            
+                            if is_first_sync:
+                                # Če je prvi sync, ga samo utišamo (brez pošiljanja)
+                                self.db.bulk_add_sent_ads(u_id, [cid])
+                            elif u_id != 0:
+                                # ČE JE REDNI CIKEL: Shranimo v ScrapedData, 
+                                # ampak NE dodamo v SentAds (to bo naredil DataManager!)
+                                existing['slika_url'] = ad['slika_url']
+                                self.db.insert_scraped_data(u_id, existing)
+                            continue
+
+                        # C) NOVO ZA AI
+                        if is_first_sync:
+                            # Prvi sync oglasov, ki jih še ni v arhivu - samo utišamo
+                            self.db.bulk_add_sent_ads(u_id, [cid])
+                            if u_id == 0: # Master crawlerju vseeno napolnimo arhiv ročno
+                                manual = self._manual_parse_row(ad['row_soup'], cid, ad['link'], ad['slika_url'])
+                                self.db.insert_market_data(manual, ad['text'])
+                        else:
                             if cid not in global_new_ads:
                                 global_new_ads[cid] = ad
-                            
                             if u_id != 0:
                                 if cid not in user_needs: user_needs[cid] = []
                                 if u_id not in user_needs[cid]: user_needs[cid].append(u_id)
@@ -272,7 +286,6 @@ class Scraper:
                 if cid in user_needs:
                     for target_u_id in user_needs[cid]:
                         self.db.insert_scraped_data(target_u_id, ad_data)
-                        self.db.bulk_add_sent_ads(target_u_id, [cid])
 
         print(f"{B_GREEN}[{get_time()}] ✅ CIKEL KONČAN. Prihranjenih {total_saved_by_cache} AI klicev.{B_END}")
 
