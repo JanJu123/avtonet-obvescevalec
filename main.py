@@ -66,7 +66,8 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     scraper = Scraper(DataBase=db)
     manager = DataManager(db)
 
-    await asyncio.to_thread(scraper.run, pending_urls) 
+    # await asyncio.to_thread(scraper.run, pending_urls) 
+    await scraper.run(pending_urls)
     
     failed_ones = db.get_newly_failed_urls()
     for f in failed_ones:

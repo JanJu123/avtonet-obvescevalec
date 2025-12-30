@@ -1,11 +1,7 @@
-import re
-import time
-import random
-import json
+import re, time, random, asyncio, json, config
 from bs4 import BeautifulSoup
-from curl_cffi import requests
+from curl_cffi.requests import AsyncSession
 from ai_handler import AIHandler
-import config
 from database import Database
 
 class Scraper:
@@ -15,13 +11,9 @@ class Scraper:
         # Master URL za rudarjenje celotnega trga (vsa vozila, najnovejša zgoraj)
         self.master_url = "https://www.avto.net/Ads/results.asp?znamka=&model=&letnikMin=0&presort=3&tipsort=DESC&zaloga=10"
 
-    def get_latest_offers(self, url: str):
-        """Pridobi oglase, očisti URL in vrne (HTML, bytes, status_code)."""
-        url = url.strip().strip('<>').replace(' ', '%20').replace('\n', '').replace('\r', '')
-        
-        if not url.startswith("http"):
-            return None, 0, 0
 
+    async def get_latest_offers(self, url: str, session: AsyncSession):
+        """Asinhroni klic, ki imitira Chrome 120."""
         headers = {
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
             'Accept-Language': 'sl-SI,sl;q=0.9',
@@ -29,24 +21,17 @@ class Scraper:
             'Referer': 'https://www.google.com/',
             'Connection': 'keep-alive'
         }
-
         try:
-            time.sleep(random.uniform(1, 2.5))
-            response = requests.get(url, impersonate="chrome120", headers=headers, timeout=30)
-            status_code = response.status_code
-            encoding = response.headers.get('Content-Encoding', '').lower()
+            # Tukaj ne uporabljamo time.sleep, ker bi ustavilo vse niti!
+            response = await session.get(url, impersonate="chrome120", headers=headers, timeout=30)
             
-            if status_code == 200:
-                decompressed_size = len(response.content)
-                # Ocenimo promet na žici zaradi Gzipa
-                wire_size = int(decompressed_size * 0.20) if any(c in encoding for c in ['gzip', 'br']) else decompressed_size
-                print(f"Dostop OK! [Ocenjen promet: {round(wire_size/1024, 1)} KB | Encoding: {encoding}]")
+            if response.status_code == 200:
+                encoding = response.headers.get('Content-Encoding', '').lower()
+                # Gzip statistika
+                wire_size = int(len(response.content) * 0.20) if "gzip" in encoding else len(response.content)
                 return response.text, wire_size, 200
-            else:
-                return None, 0, status_code
-                
+            return None, 0, response.status_code
         except Exception as e:
-            print(f"❌ Napaka pri skeniranju (CURL): {e}")
             return None, 0, 0
 
     def _is_top_ponudba(self, row_soup):
@@ -134,147 +119,154 @@ class Scraper:
 
         return ads_found, all_new_on_page, has_regular_ads
 
-    def run(self, urls_to_scrape):
-        """Final Boss Scraper: Deep Mining + Shared Brain + Global AI Batching (Max 45 ads)."""
+    async def run(self, urls_to_scrape):
+        """Final Boss Scraper V4: Async Parallel + Deep Mining + Shared Brain + Batch AI."""
         B_CYAN, B_YELLOW, B_RED, B_GREEN, B_END = "\033[96m", "\033[93m", "\033[91m", "\033[92m", "\033[0m"
         def get_time(): return time.strftime('%H:%M:%S')
 
-        # 1. Normalizacija vhoda (omogoča ročni test s stringom)
         if isinstance(urls_to_scrape, str):
-            res = self.db.get_connection().execute("SELECT url_id, url_bin FROM Urls WHERE url = ?", (urls_to_scrape,)).fetchone()
-            u_id = res[0] if res else 0
-            u_bin = res[1] if res else urls_to_scrape.encode('latin-1', 'ignore')
-            urls_to_scrape = [{'url_id': u_id, 'url_bin': u_bin, 'url': urls_to_scrape, 'telegram_name': 'Manual Test'}]
+            urls_to_scrape = [{'url_id': 0, 'url': urls_to_scrape, 'telegram_name': 'Manual Test'}]
 
         self.db.clear_scraped_snapshot()
         
-        global_new_ads = {}  # {content_id: item_data} - Unikatni oglasi za AI
-        user_needs = {}      # {content_id: [url_id1, url_id2]} - Kdo rabi kateri oglas
+        # --- GLOBALNI KOŠI ZA CELOTEN RUN ---
+        global_new_ads = {}  
+        user_needs = {}      
         total_saved_by_cache = 0
 
-        # --- 1. PRIPRAVA NALOG (Master Crawler se doda samo ENKRAT) ---
-        all_tasks = []
-        from config import MASTER_URLS
-        if MASTER_URLS:
-            all_tasks.append({
-                'url': MASTER_URLS[0], 
-                'url_id': 0, 
-                'telegram_name': 'SYSTEM_MASTER'
-            })
-        all_tasks.extend(urls_to_scrape)
+        # Priprava nalog (Master Crawler + Uporabniki)
+        all_tasks_data = []
+        if config.MASTER_URLS:
+            all_tasks_data.append({'url': config.MASTER_URLS[0], 'url_id': 0, 'telegram_name': 'SYSTEM_MASTER'})
+        all_tasks_data.extend(urls_to_scrape)
 
-        print(f"\n{B_CYAN}[{get_time()}] 🌀 ZAČENJAM CIKEL GLOBALNEGA RUDARJENJA...{B_END}")
+        print(f"\n{B_CYAN}[{get_time()}] 🌀 ZAČENJAM ASINHRONO RUDARJENJE ({len(all_tasks_data)} nalog)...{B_END}")
 
-        # --- 2. FAZA: ZBIRANJE IN FILTRIRANJE ---
-        for entry in all_tasks:
-            try:
-                start_time = time.time()
+        # VAROVALKA: Omejimo na max 3 sočasne requeste
+        sem = asyncio.Semaphore(3)
+
+        async with AsyncSession() as session:
+            
+            async def process_url_task(entry):
+                nonlocal total_saved_by_cache
                 u_id, u_name = entry['url_id'], entry.get('telegram_name', 'Neznan')
                 
-                # Priprava URL-ja (tekst ali binarno)
-                if 'url_bin' in entry and entry['url_bin']:
-                    base_url = entry['url_bin'].decode('latin-1')
-                else:
-                    base_url = entry['url']
-                
-                is_first_sync = self.db.is_first_scan(u_id)
-                
-                print(f"  {B_CYAN}🔍 Pregled: {u_name} (ID: {u_id}) {'[SYNC]' if is_first_sync else ''}{B_END}")
+                # 1. PAMETNI JITTER: Vsaka naloga počaka malo, da razporedimo promet
+                await asyncio.sleep(random.uniform(0.1, 5.0))
 
-                # Globina: Master Crawler preišče 4 strani, uporabniki le 1.
-                current_page, max_pages = 1, (4 if u_id == 0 else 1) 
-                
-                while current_page <= max_pages:
-                    clean_base = base_url.split('&stran=')[0]
-                    page_url = f"{clean_base}&stran={current_page}"
+                async with sem:
+                    url_start_time = time.time()
+                    base_url = entry['url_bin'].decode('latin-1') if 'url_bin' in entry else entry['url']
+                    is_first_sync = self.db.is_first_scan(u_id)
                     
-                    html, bytes_used, status = self.get_latest_offers(page_url)
-                    if not html: break
-                    
-                    if u_id != 0: self.db.reset_url_fail_count(u_id)
+                    print(f"  {B_CYAN}🔍 Pregled: {u_name} (ID: {u_id}) {'[SYNC]' if is_first_sync else ''}{B_END}")
 
-                    ads_on_page, all_new_on_page, has_regular = self._get_ads_from_html(html, u_id, is_first_sync)
+                    # Globoko rudarjenje: Master gre skozi 4 strani, uporabniki skozi 1
+                    current_page, max_pages = 1, (4 if u_id == 0 else 1)
+                    total_bytes_for_url = 0
 
-                    for ad in ads_on_page:
-                        cid = str(ad['id'])
+                    while current_page <= max_pages:
+                        page_url = f"{base_url.split('&stran=')[0]}&stran={current_page}"
+                        html, bytes_used, status = await self.get_latest_offers(page_url, session)
                         
-                        # A) Tiha sinhronizacija (Brez AI!)
-                        if is_first_sync:
-                            self.db.bulk_add_sent_ads(u_id, [cid])
-                            if u_id == 0:
-                                # Masterju napolnimo arhiv ročno (zastonj)
-                                manual_data = self._manual_parse_row(ad['row_soup'], cid, ad['link'], ad['slika_url'])
-                                self.db.insert_market_data(manual_data, ad['text'])
-                            continue
+                        if not html:
+                            if u_id != 0: self.db.update_url_fail_count(u_id)
+                            break
                         
-                        # B) Preverimo arhiv (Shared Brain / Cache)
-                        existing = self.db.get_market_data_by_id(cid)
-                        if existing:
-                            total_saved_by_cache += 1
-                            self.db.bulk_add_sent_ads(u_id, [cid])
-                            if u_id != 0: 
-                                existing['slika_url'] = ad['slika_url'] # Vedno osvežimo sliko
-                                self.db.insert_scraped_data(u_id, existing)
-                            continue
-
-                        # C) Resnično nov oglas za celoten sistem
-                        if cid not in global_new_ads:
-                            global_new_ads[cid] = ad
+                        total_bytes_for_url += bytes_used
+                        if u_id != 0: self.db.reset_url_fail_count(u_id)
                         
-                        if u_id != 0:
-                            if cid not in user_needs: user_needs[cid] = []
-                            if u_id not in user_needs[cid]: user_needs[cid].append(u_id)
+                        # Metoda _get_ads_from_html ostane BeautifulSoup-based
+                        ads_on_page, all_new_on_page, has_regular = self._get_ads_from_html(html, u_id, is_first_sync)
 
-                    if not is_first_sync and not all_new_on_page: break 
-                    current_page += 1
-                    time.sleep(random.uniform(0.3, 0.7))
+                        for ad in ads_on_page:
+                            cid = ad['id']
+                            
+                            # A) TIHA SINHRONIZACIJA
+                            if is_first_sync:
+                                self.db.bulk_add_sent_ads(u_id, [cid])
+                                if u_id == 0:
+                                    manual_data = self._manual_parse_row(ad['row_soup'], cid, ad['link'], ad['slika_url'])
+                                    self.db.insert_market_data(manual_data, ad['text'])
+                                continue
+                            
+                            # B) SHARED BRAIN (MarketData)
+                            existing = self.db.get_market_data_by_id(cid)
+                            if existing:
+                                total_saved_by_cache += 1
+                                self.db.bulk_add_sent_ads(u_id, [cid])
+                                if u_id != 0:
+                                    # Posodobimo sliko iz trenutnega vira, če je v arhivu ni
+                                    existing['slika_url'] = ad['slika_url']
+                                    self.db.insert_scraped_data(u_id, existing)
+                                continue
 
-                if is_first_sync:
-                    self.db.log_scraper_run(u_id, 200, 0, round(time.time() - start_time, 2), bytes_used, "Initial Sync")
+                            # C) NOVO ZA AI
+                            if cid not in global_new_ads:
+                                global_new_ads[cid] = ad
+                            
+                            if u_id != 0:
+                                if cid not in user_needs: user_needs[cid] = []
+                                if u_id not in user_needs[cid]: user_needs[cid].append(u_id)
 
-            except Exception as e:
-                print(f"  {B_RED}❌ Napaka pri URL {u_id}: {e}{B_END}")
+                        # Če smo v prvem skenu ali če nismo našli novih oglasov, ustavimo listanje strani
+                        if not is_first_sync and not all_new_on_page:
+                            break
+                            
+                        current_page += 1
+                        # Kratek async sleep med stranmi istega URL-ja
+                        await asyncio.sleep(random.uniform(0.5, 1.0))
 
-        # --- 3. FAZA: GLOBALNA AI OBDELAVA Z LIMITOM ---
-        all_new_list = list(global_new_ads.values())
+                    # Logiramo uspeh za ta URL
+                    duration = round(time.time() - url_start_time, 2)
+                    self.db.log_scraper_run(u_id, 200, 0, duration, total_bytes_for_url, "OK")
+
+            # --- ZAGON VSEH NALOG HKRATI ---
+            tasks = [process_url_task(e) for e in all_tasks_data]
+            await asyncio.gather(*tasks)
+
+        # --- FAZA 2: GLOBALNA AI OBDELAVA ---
+        new_ads_list = list(global_new_ads.values())
         
-        # VAROVALKA: Največ 45 oglasov na cikel (3 paketi po 15)
-        if len(all_new_list) > 45:
-            print(f"  {B_RED} Flood Protection: Najdenih {len(all_new_list)}, obdelujem le 45.{B_END}")
-            all_new_list = all_new_list[:45]
+        # Flood protection: Max 45 oglasov na cikel
+        if len(new_ads_list) > 45:
+            to_ai = new_ads_list[:45]
+            to_mute_ids = [ad['id'] for ad in new_ads_list[45:]]
+            # Utišamo presežek, da dilerji ne dobijo spama
+            for cid_to_mute in to_mute_ids:
+                if cid_to_mute in user_needs:
+                    for target_u_id in user_needs[cid_to_mute]:
+                        self.db.bulk_add_sent_ads(target_u_id, [cid_to_mute])
+            new_ads_list = to_ai
 
-        if all_new_list and config.USE_AI:
-            print(f"  {B_YELLOW}  AI: Obdelujem {len(all_new_list)} oglasov. ({total_saved_by_cache} iz arhiva){B_END}")
-            
-            # Razbijemo na pakete po 15
-            for i in range(0, len(all_new_list), 15):
-                batch = all_new_list[i:i+15]
-                print(f"    Batch {i//15 + 1} ({len(batch)} oglasov)...")
+        if new_ads_list and config.USE_AI:
+            print(f"  {B_YELLOW}🤖 AI: Obdelujem {len(new_ads_list)} unikatnih oglasov...{B_END}")
+            for i in range(0, len(new_ads_list), 15):
+                batch = new_ads_list[i:i+15]
+                print(f"    🔥 Batch {i//15 + 1}...")
                 
                 ai_results = self.ai.extract_ads_batch(batch)
                 
                 if ai_results:
                     for res in ai_results:
-                        # Varno preverimo ID
                         cid = str(res.get('content_id') or res.get('id'))
                         orig = global_new_ads.get(cid)
                         if not orig: continue
                         
-                        # Prilepimo slike in linke
                         res['slika_url'] = orig['slika_url']
                         res['link'], res['content_id'] = orig['link'], cid
 
-                        # Shranimo v arhiv za prihodnost
+                        # Shranimo v arhiv
                         self.db.insert_market_data(res, orig['text'])
                         self.db.add_to_mining_queue(cid, res['link'])
 
-                        # Razpošljemo vsem uporabnikom, ki so to ulovili
+                        # Razpošljemo uporabnikom
                         if cid in user_needs:
                             for target_u_id in user_needs[cid]:
                                 self.db.insert_scraped_data(target_u_id, res)
                                 self.db.bulk_add_sent_ads(target_u_id, [cid])
                 
-                time.sleep(1.5) # Premor med AI klici
+                await asyncio.sleep(1.0)
 
         print(f"{B_GREEN}[{get_time()}] ✅ CIKEL KONČAN. Prihranjenih {total_saved_by_cache} AI klicev.{B_END}")
 
