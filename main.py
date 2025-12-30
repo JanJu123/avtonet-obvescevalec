@@ -57,18 +57,19 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     pending_urls = db.get_pending_urls()
     
     if not pending_urls:
-        print(f"{B_BLUE}[{get_time()}] 💤 Mirovanje: Noben URL še ni na vrsti.{B_END}")
+        print(f"{B_BLUE}[{get_time()}]   Mirovanje: Noben URL še ni na vrsti.{B_END}")
         return
 
     pending_ids = [u['url_id'] for u in pending_urls]
-    print(f"{B_GREEN}[{get_time()}] 🚀 Skeniram: {len(pending_ids)} URL-jev na vrsti.{B_END}")
+    print(f"{B_GREEN}[{get_time()}]   Skeniram: {len(pending_ids)} URL-jev na vrsti.{B_END}")
 
     scraper = Scraper(DataBase=db)
     manager = DataManager(db)
 
-    # await asyncio.to_thread(scraper.run, pending_urls) 
+    # --- KLJUČNI POPRAVEK: Scraper je async, zato kličemo direktno ---
     await scraper.run(pending_urls)
     
+    # --- MOŽ ZA POKVARJENE LINKU ---
     failed_ones = db.get_newly_failed_urls()
     for f in failed_ones:
         t_id = f['telegram_id']
@@ -89,13 +90,14 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
         except:
             pass
 
+    # 2. Preverjanje novih oglasov
     novi_oglasi = manager.check_new_offers(filter_url_ids=pending_ids)
     
     if not novi_oglasi:
         print(f"{B_BLUE}[{get_time()}] ℹ️ Ni novih oglasov za te skene.{B_END}")
         return
 
-    print(f"{B_YELLOW}[{get_time()}] ✉️ Pošiljam {len(novi_oglasi)} novih obvestil...{B_END}")
+    print(f"{B_YELLOW}[{get_time()}] ✉️ Pošiljam {len(novi_oglasi)} novih obvestila...{B_END}")
 
     for oglas in novi_oglasi:
         chat_id = oglas['target_user_id']
@@ -103,36 +105,26 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
         slika = oglas.get("slika_url")
 
         try:
-            # --- VARNO POŠILJANJE S FALLBACKOM ---
             success = False
             if slika and slika.startswith('http'):
                 try:
-                    await context.bot.send_photo(
-                        chat_id=chat_id, 
-                        photo=slika, 
-                        caption=tekst, 
-                        parse_mode="HTML"
-                    )
+                    await context.bot.send_photo(chat_id=chat_id, photo=slika, caption=tekst, parse_mode="HTML")
                     success = True
                 except Exception as img_err:
-                    print(f"⚠️ Napaka pri sliki (ID:{oglas['content_id']}): {img_err}. Poskušam samo tekst...")
+                    print(f"⚠️ Napaka pri sliki (ID:{oglas['content_id']}): {img_err}")
             
-            # Če slike ni ali pa je pošiljanje slike spodletelo
             if not success:
-                await context.bot.send_message(
-                    chat_id=chat_id, 
-                    text=tekst, 
-                    parse_mode="HTML", 
-                    disable_web_page_preview=False
-                )
+                await context.bot.send_message(chat_id=chat_id, text=tekst, parse_mode="HTML", disable_web_page_preview=False)
             
             db.add_sent_ad(chat_id, oglas['content_id'])
             await asyncio.sleep(0.5) 
             
         except Exception as e:
-            print(f"[{get_time()}] ❌ Kritična napaka pri pošiljanju uporabniku {chat_id}: {e}")
+            print(f"[{get_time()}] ❌ Napaka pri pošiljanju uporabniku {chat_id}: {e}")
 
     print(f"{B_GREEN}[{get_time()}] --- [ CIKEL KONČAN: Uspešno poslano ] ---{B_END}")
+    
+
 
 
 async def daily_maintenance(context: telegram.ext.ContextTypes.DEFAULT_TYPE):

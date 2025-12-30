@@ -139,7 +139,7 @@ async def add_url_command(update: telegram.Update, context: telegram.ext.Context
                     'telegram_name': t_name
                 }]
                 
-                await asyncio.to_thread(temp_scraper.run, pending_data)
+                await temp_scraper.run(pending_data)
                 
                 await sync_msg.edit_text(
                     "✅ <b>Iskanje uspešno dodano!</b>\n\n"
