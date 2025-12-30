@@ -302,7 +302,7 @@ class Scraper:
                 # Shranjevanje v ScrapedData
                 for data in final_results:
                     self.db.insert_scraped_data(u_id, data)
-                    self.db.insert_market_data(data)
+                    self.db.insert_market_data(data, raw_snippet=orig['text'])
 
                 duration = round(time.time() - start_time, 2)
                 self.db.log_scraper_run(u_id, 200, len(final_results), duration, bytes_used, "Success")

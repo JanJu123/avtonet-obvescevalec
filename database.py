@@ -1332,7 +1332,7 @@ class Database:
 
 
 
-    def insert_market_data(self, data):
+    def insert_market_data(self, data, raw_snippet):
         """Shrani oglas v splošni arhiv trga za ML analitiko."""
         conn = self.get_connection()
         c = conn.cursor()
@@ -1352,7 +1352,7 @@ class Database:
                 data.get('menjalnik'),
                 data.get('motor'),
                 data.get('link'),
-                data.get('text') # To je tisti očiščen snippet iz scraperja
+                raw_snippet
             ))
             conn.commit()
         except Exception as e:
