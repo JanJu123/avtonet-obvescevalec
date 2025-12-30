@@ -120,7 +120,7 @@ class Scraper:
         return ads_found, all_new_on_page, has_regular_ads
 
     async def run(self, urls_to_scrape):
-        """Final Boss Scraper V5: Async Parallel + Shared Brain + Parallel AI Processing."""
+        """Final Boss Scraper V4.1: Async Parallel + Shared Brain + Fix za cid error."""
         B_CYAN, B_YELLOW, B_RED, B_GREEN, B_END = "\033[96m", "\033[93m", "\033[91m", "\033[92m", "\033[0m"
         def get_time(): return time.strftime('%H:%M:%S')
 
@@ -129,21 +129,18 @@ class Scraper:
 
         self.db.clear_scraped_snapshot()
         
-        # --- GLOBALNI KOŠI ---
         global_new_ads = {}  
         user_needs = {}      
         total_saved_by_cache = 0
 
-        # Priprava nalog
         all_tasks_data = []
         from config import MASTER_URLS
         if MASTER_URLS:
             all_tasks_data.append({'url': MASTER_URLS[0], 'url_id': 0, 'telegram_name': 'SYSTEM_MASTER'})
         all_tasks_data.extend(urls_to_scrape)
 
-        print(f"\n{B_CYAN}[{get_time()}] 🌀 ZAČENJAM ASINHRONO RUDARJENJE ({len(all_tasks_data)} nalog)...{B_END}")
+        print(f"\n{B_CYAN}[{get_time()}] 🌀 ZAČENJAM ASINHRONO RUDARJENJE...{B_END}")
 
-        # VAROVALKA: Max 3 sočasni requesti na Avto.net
         sem = asyncio.Semaphore(3)
 
         async with AsyncSession() as session:
@@ -151,18 +148,11 @@ class Scraper:
             async def process_url_task(entry):
                 nonlocal total_saved_by_cache
                 u_id, u_name = entry['url_id'], entry.get('telegram_name', 'Neznan')
-                
-                # JITTER: Da requesti ne letijo vsi hkrati ob štartu
-                await asyncio.sleep(random.uniform(0.1, 5.0))
+                await asyncio.sleep(random.uniform(0.1, 4.0))
 
                 async with sem:
                     url_start_time = time.time()
-                    # Priprava URL-ja
-                    if 'url_bin' in entry and entry['url_bin']:
-                        base_url = entry['url_bin'].decode('latin-1')
-                    else:
-                        base_url = entry['url']
-                    
+                    base_url = entry['url_bin'].decode('latin-1') if 'url_bin' in entry else entry['url']
                     is_first_sync = self.db.is_first_scan(u_id)
                     
                     print(f"  {B_CYAN}🔍 Pregled: {u_name} (ID: {u_id}) {'[SYNC]' if is_first_sync else ''}{B_END}")
@@ -182,12 +172,14 @@ class Scraper:
                         total_bytes += bytes_used
                         if u_id != 0: self.db.reset_url_fail_count(u_id)
                         
+                        # Dobimo vse oglase s strani
                         ads_on_page, all_new_on_page, has_regular = self._get_ads_from_html(html, u_id, is_first_sync)
 
                         for ad in ads_on_page:
-                            cid = ad['id']
+                            # VARNOST: cid definiramo takoj na začetku zanke!
+                            cid = str(ad['id'])
                             
-                            # A) SYNC
+                            # 1. ČE JE PRVI SYNC
                             if is_first_sync:
                                 self.db.bulk_add_sent_ads(u_id, [cid])
                                 if u_id == 0:
@@ -195,34 +187,21 @@ class Scraper:
                                     self.db.insert_market_data(manual, ad['text'])
                                 continue
                             
-                            # B) CACHE (Arhiv)
-                            # V scraper.py znotraj run metode popravi ta del:
+                            # 2. PREVERIMO ARHIV (MarketData)
+                            existing = self.db.get_market_data_by_id(cid)
+                            if existing:
+                                total_saved_by_cache += 1
+                                # Pomembno: tukaj NE kličemo bulk_add_sent_ads, 
+                                # to bo naredil main.py po uspešnem pošiljanju!
+                                if u_id != 0:
+                                    existing['slika_url'] = ad['slika_url'] 
+                                    self.db.insert_scraped_data(u_id, existing)
+                                continue
 
-                        # B) CACHE (Arhiv)
-                        existing = self.db.get_market_data_by_id(cid)
-                        if existing:
-                            total_saved_by_cache += 1
-                            
-                            if is_first_sync:
-                                # Če je prvi sync, ga samo utišamo (brez pošiljanja)
-                                self.db.bulk_add_sent_ads(u_id, [cid])
-                            elif u_id != 0:
-                                # ČE JE REDNI CIKEL: Shranimo v ScrapedData, 
-                                # ampak NE dodamo v SentAds (to bo naredil DataManager!)
-                                existing['slika_url'] = ad['slika_url']
-                                self.db.insert_scraped_data(u_id, existing)
-                            continue
-
-                        # C) NOVO ZA AI
-                        if is_first_sync:
-                            # Prvi sync oglasov, ki jih še ni v arhivu - samo utišamo
-                            self.db.bulk_add_sent_ads(u_id, [cid])
-                            if u_id == 0: # Master crawlerju vseeno napolnimo arhiv ročno
-                                manual = self._manual_parse_row(ad['row_soup'], cid, ad['link'], ad['slika_url'])
-                                self.db.insert_market_data(manual, ad['text'])
-                        else:
+                            # 3. NOVO ZA AI
                             if cid not in global_new_ads:
                                 global_new_ads[cid] = ad
+                            
                             if u_id != 0:
                                 if cid not in user_needs: user_needs[cid] = []
                                 if u_id not in user_needs[cid]: user_needs[cid].append(u_id)
@@ -234,11 +213,10 @@ class Scraper:
                     duration = round(time.time() - url_start_time, 2)
                     self.db.log_scraper_run(u_id, 200, 0, duration, total_bytes, "OK")
 
-            # Poženemo zbiranje iz vseh URL-jev hkrati
             tasks = [process_url_task(e) for e in all_tasks_data]
             await asyncio.gather(*tasks)
 
-        # --- FAZA 2: GLOBALNA AI OBDELAVA (VZPOREDNI KLIENTI) ---
+        # --- FAZA 2: GLOBALNA AI OBDELAVA ---
         new_ads_list = list(global_new_ads.values())
         
         # Flood protection: Max 45
@@ -251,22 +229,16 @@ class Scraper:
             new_ads_list = to_ai
 
         if new_ads_list and config.USE_AI:
+            print(f"  {B_YELLOW}🤖 AI: Obdelujem {len(new_ads_list)} oglasov. ({total_saved_by_cache} iz arhiva){B_END}")
+            # Vzporedno procesiramo batche
             batch_size = 15
-            # Razbijemo v pakete po 15
             batches = [new_ads_list[i:i + batch_size] for i in range(0, len(new_ads_list), batch_size)]
             
-            print(f"  {B_YELLOW}🤖 AI: Začenjam VZPOREDNO obdelavo {len(batches)} batchev...{B_END}")
-            
-            # --- MAGIJA: Pripravimo vse AI klice hkrati ---
             ai_tasks = []
             for idx, batch in enumerate(batches):
-                # self.ai.process_single_batch mora biti asinhrona metoda!
                 ai_tasks.append(self.ai.process_single_batch(batch, idx))
             
-            # Pošljemo vse v Ameriko hkrati
             all_ai_results = await asyncio.gather(*ai_tasks)
-
-            # Združimo vse rezultate iz vseh ključev
             flat_results = [ad for sublist in all_ai_results for ad in sublist if sublist]
 
             for ad_data in flat_results:
@@ -274,17 +246,15 @@ class Scraper:
                 orig = global_new_ads.get(cid)
                 if not orig: continue
                 
-                # Dodamo slike/linke in popravimo ID
                 ad_data['slika_url'] = orig['slika_url']
                 ad_data['link'], ad_data['content_id'] = orig['link'], cid
                 
-                # Shranimo v arhiv
                 self.db.insert_market_data(ad_data, orig['text'])
                 self.db.add_to_mining_queue(cid, ad_data['link'])
 
-                # Pošljemo vsem uporabnikom, ki to rabijo
                 if cid in user_needs:
                     for target_u_id in user_needs[cid]:
+                        # Tukaj prav tako NE kličemo bulk_add_sent_ads!
                         self.db.insert_scraped_data(target_u_id, ad_data)
 
         print(f"{B_GREEN}[{get_time()}] ✅ CIKEL KONČAN. Prihranjenih {total_saved_by_cache} AI klicev.{B_END}")
