@@ -1,7 +1,7 @@
 import json
 import asyncio
 from openai import AsyncOpenAI # UPORABIMO ASYNC KLIENTA
-from config import OPENROUTER_API_KEY, AI_MODEL
+from config import OPENROUTER_API_KEYS, AI_MODEL
 import time
 
 class AIHandler:
@@ -9,7 +9,7 @@ class AIHandler:
         # Ustvarimo seznam asinhronih klientov (vsak s svojo ekipo/ključem)
         self.clients = [
             AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=key)
-            for key in OPENROUTER_API_KEY
+            for key in OPENROUTER_API_KEYS
         ]
         self.model = AI_MODEL
 
