@@ -40,7 +40,7 @@ class Scraper:
                 decompressed_size = len(response.content)
                 # Ocenimo promet na žici zaradi Gzipa
                 wire_size = int(decompressed_size * 0.20) if any(c in encoding for c in ['gzip', 'br']) else decompressed_size
-                print(f"✅ Dostop OK! [Ocenjen promet: {round(wire_size/1024, 1)} KB | Encoding: {encoding}]")
+                print(f"Dostop OK! [Ocenjen promet: {round(wire_size/1024, 1)} KB | Encoding: {encoding}]")
                 return response.text, wire_size, 200
             else:
                 return None, 0, status_code
@@ -240,16 +240,16 @@ class Scraper:
         
         # VAROVALKA: Največ 45 oglasov na cikel (3 paketi po 15)
         if len(all_new_list) > 45:
-            print(f"  {B_RED}⚠️ Flood Protection: Najdenih {len(all_new_list)}, obdelujem le 45.{B_END}")
+            print(f"  {B_RED} Flood Protection: Najdenih {len(all_new_list)}, obdelujem le 45.{B_END}")
             all_new_list = all_new_list[:45]
 
         if all_new_list and config.USE_AI:
-            print(f"  {B_YELLOW}🤖 AI: Obdelujem {len(all_new_list)} oglasov. ({total_saved_by_cache} iz arhiva){B_END}")
+            print(f"  {B_YELLOW}  AI: Obdelujem {len(all_new_list)} oglasov. ({total_saved_by_cache} iz arhiva){B_END}")
             
             # Razbijemo na pakete po 15
             for i in range(0, len(all_new_list), 15):
                 batch = all_new_list[i:i+15]
-                print(f"    🔥 Batch {i//15 + 1} ({len(batch)} oglasov)...")
+                print(f"    Batch {i//15 + 1} ({len(batch)} oglasov)...")
                 
                 ai_results = self.ai.extract_ads_batch(batch)
                 

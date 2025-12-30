@@ -274,7 +274,7 @@ def main():
 
     # --- NASTAVITEV PERIODIČNEGA OPRAVILA ---
     # Preverjaj vsakih 300 sekund (5 minut), začni čez 10 sekund
-    application.job_queue.run_repeating(check_for_new_ads, interval=120, first=10)
+    application.job_queue.run_repeating(check_for_new_ads, interval=180, first=10)
 
     # Čiščenje baze enkrat na dan (npr. vsakih 86400 sekund)
     # Nastavimo čas, ko običajno ni veliko novih oglasov
@@ -286,8 +286,6 @@ def main():
     # Preverja in obvesti Uporabnika če se njegov paket nasledni dan zaključi
     application.job_queue.run_repeating(check_subscription_expirations, interval=3600, first=60)
 
-    # Preverja za nove obvestila za ves Market, 
-    application.job_queue.run_repeating(master_market_crawler, interval=300, first=30)
 
     print("AvtoNet Tracker Bot je zagnan in čaka na nove oglase...")
     
