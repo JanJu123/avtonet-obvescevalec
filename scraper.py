@@ -167,15 +167,18 @@ class Scraper:
         return new_ads_list
 
     def run(self, urls_to_scrape):
-        """Glavni proces skeniranja s 100% varno AI obdelavo in natančno diagnostiko napak."""
+        """Glavni proces skeniranja z uporabo arhiva (Shared Brain) in AI batchinga."""
+        # Barve za lepši izpis na VPS
         B_CYAN = "\033[96m"
         B_YELLOW = "\033[93m"
         B_RED = "\033[91m"
+        B_GREEN = "\033[92m"
         B_END = "\033[0m"
 
         def get_time():
             return time.strftime('%H:%M:%S')
 
+        # Normalizacija vhoda
         if isinstance(urls_to_scrape, str):
             res = self.db.get_connection().execute("SELECT url_id, url_bin FROM Urls WHERE url = ?", (urls_to_scrape,)).fetchone()
             u_id = res[0] if res else 0
@@ -198,43 +201,27 @@ class Scraper:
 
                 print(f"{B_CYAN}[{get_time()}] 🔍 Skeniram URL ID {u_id} (Uporabnik: {u_name})...{B_END}")
                 
-                # --- NOVO: Dobimo tudi status_code ---
                 html, bytes_used, status_code = self.get_latest_offers(final_url)
                 
                 if not html:
                     current_fails = self.db.update_url_fail_count(u_id)
-                    
-                    # NATANČNA DOLOČITEV NAPAKE ZA BAZO
-                    if status_code == 403:
-                        actual_error = "Cloudflare 403 (Forbidden)"
-                    elif status_code == 404:
-                        actual_error = "Napaka 404 (Stran ne obstaja)"
-                    elif status_code >= 500:
-                        actual_error = f"Server Error {status_code}"
-                    elif status_code == 0:
-                        actual_error = "Network/Invalid URL Error"
-                    else:
-                        actual_error = f"HTTP Error {status_code}"
-
+                    actual_error = f"HTTP {status_code}" if status_code != 0 else "CURL Error"
                     print(f"{B_RED}[{get_time()}] ❌ {actual_error} ({current_fails}/3) za {u_name}{B_END}")
-                    
-                    # V bazo zapišemo točno kodo in opis
                     self.db.log_scraper_run(u_id, status_code, 0, round(time.time() - start_time, 2), 0, actual_error)
                     continue
                 else:
                     self.db.reset_url_fail_count(u_id)
 
-                # --- OBDELAVA HTML (BeautifulSoup) ---
                 is_first = self.db.is_first_scan(u_id)
                 soup = BeautifulSoup(html, 'html.parser')
                 rows = soup.find_all('div', class_='GO-Results-Row')
                 
                 all_ids_on_page = []
-                new_ads_to_process = []
+                ads_to_ai_batch = [] # Seznam tistih, ki jih mora AI dejansko obdelati
+                final_results = []   # Končni podatki za vpis v ScrapedData (AI + Arhiv)
 
                 for row in rows:
                     if self._is_top_ponudba(row): 
-                        # Tiho utišamo TOP ponudbe takoj
                         link_tag = row.find('a', class_='stretched-link')
                         if link_tag:
                             href = link_tag.get('href', '')
@@ -250,13 +237,29 @@ class Scraper:
                     content_id = str(match.group(1))
                     all_ids_on_page.append(content_id)
 
+                    # Če je oglas nov za tega uporabnika...
                     if not is_first and self.db.is_ad_new(content_id):
-                        new_ads_to_process.append({
-                            "id": content_id,
-                            "row_soup": row,
-                            "text": self._clean_row_for_ai(row),
-                            "link": "https://www.avto.net" + href.replace("..", "")
-                        })
+                        
+                        # --- NOVO: PREVERIMO ARHIV (MarketData) ---
+                        # Če je nekdo drug ta avto že ulovil, ne trošimo AI-ja!
+                        existing_ad = self.db.get_market_data_by_id(content_id)
+                        
+                        if existing_ad:
+                            print(f"{B_GREEN}[{get_time()}] ♻️ [REUSE] Oglas {content_id} najden v arhivu. Preskakujem AI.{B_END}")
+                            # Pripravimo sliko in link iz trenutnega row-a (da sta vedno sveža)
+                            img_tag = row.find('img')
+                            existing_ad['slika_url'] = img_tag.get('data-src') or img_tag.get('src') if img_tag else None
+                            existing_ad['link'] = "https://www.avto.net" + href.replace("..", "")
+                            final_results.append(existing_ad)
+                        else:
+                            # Popolnoma nov oglas, ki gre v AI batch
+                            ads_to_ai_batch.append({
+                                "id": content_id,
+                                "row_soup": row,
+                                "text": self._clean_row_for_ai(row),
+                                "link": "https://www.avto.net" + href.replace("..", ""),
+                                "slika_url": None
+                            })
 
                 if is_first:
                     print(f"[{get_time()}] 📥 Prvi sken za {u_name}: Sinhroniziram {len(all_ids_on_page)} oglasov.")
@@ -264,57 +267,66 @@ class Scraper:
                     self.db.log_scraper_run(u_id, 200, 0, round(time.time() - start_time, 2), bytes_used, "Initial Sync")
                     continue
 
-                if not new_ads_to_process:
-                    self.db.log_scraper_run(u_id, 200, 0, round(time.time() - start_time, 2), bytes_used, "No new ads")
-                    continue
-
-                # Flood Protection (max 5)
-                if len(new_ads_to_process) > 5:
-                    to_process = new_ads_to_process[:5]
-                    to_mute_ids = [ad['id'] for ad in new_ads_to_process[5:]]
-                    self.db.bulk_add_sent_ads(u_id, to_mute_ids)
-                    new_ads_to_process = to_process
-
+                # --- AI PROCESIRANJE (Batching) ---
                 # --- AI PROCESIRANJE ---
-                final_results = []
-                if config.USE_AI:
-                    print(f"{B_YELLOW}[{get_time()}] 🤖 AI obdeluje {len(new_ads_to_process)} oglasov za {u_name}...{B_END}")
-                    ai_results = self.ai.extract_ads_batch(new_ads_to_process)
-                    
-                    if ai_results:
-                        for ad_data in ai_results:
-                            ad_id = ad_data.get('content_id') or ad_data.get('id') or ad_data.get('ID')
-                            orig = next((x for x in new_ads_to_process if str(x['id']) == str(ad_id)), None)
-                            if orig:
-                                ad_data['content_id'] = str(orig['id'])
-                                ad_data['link'] = orig['link']
-                                img_tag = orig['row_soup'].find('img')
-                                ad_data['slika_url'] = img_tag.get('data-src') or img_tag.get('src') if img_tag else None
-                                final_results.append(ad_data)
+                if ads_to_ai_batch:
+                    # Flood Protection (max 5)
+                    if len(ads_to_ai_batch) > 5:
+                        to_mute_ids = [ad['id'] for ad in ads_to_ai_batch[5:]]
+                        self.db.bulk_add_sent_ads(u_id, to_mute_ids)
+                        ads_to_ai_batch = ads_to_ai_batch[:5]
 
-                # Manual Fallback
+                    if config.USE_AI:
+                        print(f"{B_YELLOW}[{get_time()}] 🤖 AI obdeluje {len(ads_to_ai_batch)} oglasov za {u_name}...{B_END}")
+                        ai_results = self.ai.extract_ads_batch(ads_to_ai_batch)
+                        
+                        if ai_results:
+                            for ad_data in ai_results:
+                                ad_id = str(ad_data.get('content_id') or ad_data.get('id') or ad_data.get('ID'))
+                                # Poiščemo pripadajoč originalen snippet
+                                orig = next((x for x in ads_to_ai_batch if str(x['id']) == ad_id), None)
+                                
+                                if orig:
+                                    # Pripravimo končne podatke
+                                    ad_data['content_id'] = ad_id
+                                    ad_data['link'] = orig['link']
+                                    img_tag = orig['row_soup'].find('img')
+                                    ad_data['slika_url'] = img_tag.get('data-src') or img_tag.get('src') if img_tag else None
+                                    
+                                    # DODAMO V REZULTATE ZA UPORABNIKA
+                                    final_results.append(ad_data)
+                                    
+                                    # TAKOJ SHRANIMO V MARKET DATA (Tukaj je zdaj varno!)
+                                    self.db.insert_market_data(ad_data, orig['text'])
+                        else:
+                            print(f"[{get_time()}] ⚠️ AI odpovedal, preklop na manual.")
+
+                # --- MANUAL FALLBACK (za tiste, ki še niso v final_results) ---
+                # Preverimo, če nam v ads_to_ai_batch manjka kakšen oglas (ker ga AI ni vrnil ali je USE_AI=False)
+                for item in ads_to_ai_batch:
+                    if not any(str(res.get('content_id')) == str(item['id']) for res in final_results):
+                        img_tag = item['row_soup'].find('img')
+                        img_url = img_tag.get('data-src') or img_tag.get('src') if img_tag else None
+                        manual_data = self._manual_parse_row(item['row_soup'], item['id'], item['link'], img_url)
+                        
+                        final_results.append(manual_data)
+                        # Shranimo tudi ročno prebrane podatke v arhiv
+                        self.db.insert_market_data(manual_data, item['text'])
+
+                # --- VPIS V BAZO ZA TELEGRAM OBVESTILA ---
                 for data in final_results:
-                    # 1. Shranimo za uporabnika (za Telegram obvestilo)
                     self.db.insert_scraped_data(u_id, data)
-                    
-                    # 2. Poiščemo specifičen surovi tekst za TA oglas
-                    # S str() preprečimo napake, če je ID nekje int, drugje string
-                    orig = next((x for x in new_ads_to_process if str(x['id']) == str(data.get('content_id'))), None)
-                    
-                    # Določimo tekst, ki ga bomo shranili v arhiv
-                    current_raw_text = orig['text'] if orig else "Neznano"
-                    
-                    # 3. Shranimo v trajni arhiv MarketData
-                    self.db.insert_market_data(data, current_raw_text)
 
+                # Logiranje uspeha
                 duration = round(time.time() - start_time, 2)
                 self.db.log_scraper_run(u_id, 200, len(final_results), duration, bytes_used, "Success")
-                print(f"✅ [{get_time()}] URL {u_id} ({u_name}) končan v {duration}s.")
+                if final_results:
+                    print(f"✅ [{get_time()}] URL {u_id} končan ({len(final_results)} oglasov) v {duration}s.")
 
             except Exception as e:
-                print(f"{B_RED}[{get_time()}] ❌ Kritična napaka pri URL {entry['url_id']}: {e}{B_END}")
+                print(f"{B_RED}[{get_time()}] ❌ Kritična napaka pri URL {u_id}: {e}{B_END}")
             
-            time.sleep(random.uniform(1.5, 4))
+            time.sleep(random.uniform(2, 4))
 
 # --- TEST ---
 if __name__ == "__main__":

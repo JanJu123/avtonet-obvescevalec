@@ -1330,7 +1330,14 @@ class Database:
         return [dict(row) for row in rows]
     
 
-
+    def get_market_data_by_id(self, content_id):
+        """Poišče oglas v arhivu MarketData po ID-ju."""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        res = c.execute("SELECT * FROM MarketData WHERE content_id = ?", (str(content_id),)).fetchone()
+        conn.close()
+        return dict(res) if res else None
 
     def insert_market_data(self, data, raw_snippet):
         """Shrani oglas v splošni arhiv trga za ML analitiko."""
