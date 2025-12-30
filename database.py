@@ -99,11 +99,12 @@ class Database:
             duration REAL,
             bytes_used INTEGER,
             error_msg TEXT,
-            timestamp DATETIME DEFAULT (strftime('%d.%m.%Y %H:%M:%S', 'now', 'localtime')),
-            timestamp_utc DATETIME DEFAULT CURRENT_TIMESTAMP,
+            timestamp TEXT,      -- Tukaj bomo shranili SLO format (DD.MM.YYYY)
+            timestamp_utc DATETIME DEFAULT CURRENT_TIMESTAMP, -- SQLite sam vpiše UTC čas
             FOREIGN KEY (url_id) REFERENCES Urls (url_id)
         )
         """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_scraper_logs_url_time ON ScraperLogs (url_id, timestamp_utc);")
 
         # 7. User Activity
         cursor.execute("""
