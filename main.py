@@ -18,6 +18,7 @@ import pytz
 
 import logging
 
+
 # ---- LOGGING ---- #
 # Nastavitev zapisovanja v datoteko app_debug.log
 logging.basicConfig(
@@ -204,6 +205,30 @@ async def check_subscription_expirations(context: telegram.ext.ContextTypes.DEFA
 
 
 
+async def master_market_crawler(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+    """Sistemski crawler, ki rudaris celoten trg za MarketData."""
+    from config import SCRAPER_ACTIVE, MASTER_URLS
+    if not SCRAPER_ACTIVE: return
+
+    print(f"\n{B_CYAN}--- [ MASTER MARKET CRAWLER ] ---{B_END}")
+    db = Database(DB_PATH)
+    scraper = Scraper(DataBase=db)
+    
+    # Pripravimo MASTER URL-je v formatu za scraper
+    master_tasks = []
+    for idx, url in enumerate(MASTER_URLS):
+        master_tasks.append({
+            'url_id': 999, # Fiktivni ID za sistemsko rudarjenje
+            'url': url,
+            'telegram_name': 'SYSTEM_CRAWLER'
+        })
+
+    # Zaženemo scraper v ločeni niti
+    await asyncio.to_thread(scraper.run, master_tasks)
+    print(f"{B_CYAN}--- [ MASTER CRAWLER KONČAN ] ---{B_END}")
+
+
+
 def main():
     # Iniciacija baze
     db = Database(DB_PATH)
@@ -260,6 +285,9 @@ def main():
 
     # Preverja in obvesti Uporabnika če se njegov paket nasledni dan zaključi
     application.job_queue.run_repeating(check_subscription_expirations, interval=3600, first=60)
+
+    # Preverja za nove obvestila za ves Market, 
+    application.job_queue.run_repeating(master_market_crawler, interval=300, first=30)
 
     print("AvtoNet Tracker Bot je zagnan in čaka na nove oglase...")
     

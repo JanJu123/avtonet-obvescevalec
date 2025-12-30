@@ -135,6 +135,16 @@ class Database:
         )
         """)
 
+        # 8. MINING QUEUE: Čakalnica za tvoj laptop doma
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS MiningQueue (
+            content_id TEXT PRIMARY KEY,
+            link TEXT,
+            status INTEGER DEFAULT 0, -- 0: Čaka, 1: Obdeluje, 2: Končano
+            created_at DATETIME DEFAULT (strftime('%d.%m.%Y %H:%M:%S', 'now', 'localtime'))
+        )
+        """)
+
         conn.commit()
         conn.close()
         print("Baza podatkov je uspešno pripravljena.")
@@ -1212,10 +1222,17 @@ class Database:
             conn.close()
 
     
-    def is_ad_new(self, content_id):
+    def is_ad_new(self, telegram_id, content_id):
+        """Preveri, če uporabnik (ali admin za master) še ni videl tega oglasa."""
         conn = self.get_connection()
-        # Preverimo, če oglas že obstaja v tabeli SentAds (zgodovina vseh poslanih)
-        res = conn.execute("SELECT 1 FROM SentAds WHERE content_id = ? LIMIT 1", (content_id,)).fetchone()
+        # Če je id 0 (Master), preverimo če oglas sploh obstaja v arhivu
+        if telegram_id == 0:
+            res = conn.execute("SELECT 1 FROM MarketData WHERE content_id = ? LIMIT 1", (str(content_id),)).fetchone()
+            conn.close()
+            return res is None
+        
+        # Za uporabnike preverimo SentAds
+        res = conn.execute("SELECT 1 FROM SentAds WHERE telegram_id = ? AND content_id = ? LIMIT 1", (telegram_id, str(content_id))).fetchone()
         conn.close()
         return res is None
     
@@ -1313,41 +1330,43 @@ class Database:
     
 
     def get_market_data_by_id(self, content_id):
-        """Poišče oglas v arhivu MarketData po ID-ju."""
+        """Preveri, če oglas že obstaja v arhivu."""
         conn = self.get_connection()
         conn.row_factory = sqlite3.Row
-        c = conn.cursor()
-        res = c.execute("SELECT * FROM MarketData WHERE content_id = ?", (str(content_id),)).fetchone()
+        res = conn.execute("SELECT * FROM MarketData WHERE content_id = ?", (str(content_id),)).fetchone()
         conn.close()
         return dict(res) if res else None
 
+
     def insert_market_data(self, data, raw_snippet):
-        """Shrani oglas v splošni arhiv trga za ML analitiko."""
+        """Shrani v zlati arhiv."""
         conn = self.get_connection()
-        c = conn.cursor()
         try:
-            c.execute("""
+            conn.execute("""
                 INSERT OR IGNORE INTO MarketData (
                     content_id, ime_avta, cena, leto_1_reg, 
                     prevozenih, gorivo, menjalnik, motor, link, raw_snippet
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                str(data.get('content_id')),
-                data.get('ime_avta'),
-                data.get('cena'),
-                data.get('leto_1_reg'),
-                data.get('prevozenih'),
-                data.get('gorivo'),
-                data.get('menjalnik'),
-                data.get('motor'),
-                data.get('link'),
-                raw_snippet
+                str(data.get('content_id')), data.get('ime_avta'), data.get('cena'),
+                data.get('leto_1_reg'), data.get('prevozenih'), data.get('gorivo'),
+                data.get('menjalnik'), data.get('motor'), data.get('link'), raw_snippet
             ))
             conn.commit()
-        except Exception as e:
-            print(f"❌ [DB ERROR] MarketData insert: {e}")
         finally:
             conn.close()
+
+
+    def add_to_mining_queue(self, content_id, link):
+        """Doda oglas v čakalnico za rudarjenje detajlov na laptopu."""
+        conn = self.get_connection()
+        c = conn.cursor()
+        try:
+            c.execute("INSERT OR IGNORE INTO MiningQueue (content_id, link) VALUES (?, ?)", (str(content_id), link))
+            conn.commit()
+        finally:
+            conn.close()
+
 
 if __name__ == "__main__":
     db = Database(db_name="test_bot.db")

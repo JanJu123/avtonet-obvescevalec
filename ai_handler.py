@@ -47,6 +47,9 @@ class AIHandler:
         VAROVALKA: Če podatka ne najdeš, uporabi vrednost "Neznano". 
         NIKOLI ne spreminjaj imen ključev (content_id, ime_avta, itd.), sicer sistem ne bo deloval.
 
+        - Če vidiš oznako 'Starost: NOVO', za letnik uporabi trenutno leto (2025) in za kilometre '0 km'.
+        - Ceno vzemi iz polja AKCIJSKA CENA ali tisto, ki je najnižja v besedilu."
+
         PODATKI ZA OBDELAVO:
         {combined_text}
         """
