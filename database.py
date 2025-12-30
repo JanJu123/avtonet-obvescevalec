@@ -100,6 +100,7 @@ class Database:
             bytes_used INTEGER,
             error_msg TEXT,
             timestamp DATETIME DEFAULT (strftime('%d.%m.%Y %H:%M:%S', 'now', 'localtime')),
+            timestamp_utc DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (url_id) REFERENCES Urls (url_id)
         )
         """)
@@ -953,27 +954,17 @@ class Database:
 
 
     def get_pending_urls(self):
-        """
-        Vrne URL-je, ki so na vrsti za skeniranje.
-        Uporablja 'url' za loge in 'url_bin' za dejansko skeniranje.
-        """
         conn = self.get_connection()
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         
-        # 1. SQL POIZVEDBA: RankedTracking za limite, vključuje tekstovni 'url' in binarni 'url_bin'
+        # 1. SQL Query ostane isti (dobimo vse aktivne)
         query = """
             WITH RankedTracking AS (
                 SELECT 
-                    t.url_id, 
-                    u.url,              -- Originalen tekstovni stolpec
-                    u.url_bin,          -- Nov binarni stolpec za scraper
-                    u.fail_count,
-                    us.telegram_id,
-                    us.telegram_name,
-                    us.scan_interval,
-                    us.subscription_type,
-                    us.is_active,
+                    t.url_id, u.url, u.url_bin, u.fail_count,
+                    us.telegram_id, us.telegram_name, us.scan_interval,
+                    us.subscription_type, us.is_active,
                     ROW_NUMBER() OVER (PARTITION BY us.telegram_id ORDER BY t.created_at ASC) as url_rank,
                     us.max_urls
                 FROM Tracking t
@@ -984,58 +975,38 @@ class Database:
             SELECT url_id, url, url_bin, telegram_name, MIN(scan_interval) as min_interval,
                 MAX(CASE WHEN subscription_type = 'ULTRA' THEN 1 ELSE 0 END) as has_ultra
             FROM RankedTracking
-            WHERE url_rank <= max_urls 
-            AND fail_count < 3
+            WHERE url_rank <= max_urls AND fail_count < 3
             GROUP BY url_id
         """
         
-        try:
-            active_urls = c.execute(query).fetchall()
-        except Exception as e:
-            print(f"❌ SQL Napaka v get_pending_urls: {e}")
-            conn.close()
-            return []
-
+        active_urls = c.execute(query).fetchall()
         pending = []
-        now = datetime.datetime.now()
-        is_night = 0 <= now.hour < 7
-
+        
+        # --- NOVO: Uporabimo UNIX timestamp za primerjavo (neprebojno!) ---
+        # datetime('now') v SQLite je vedno UTC
+        # 'strftime('%s', ...)' pretvori v sekunde
         for row in active_urls:
             u_id = row['url_id']
+            interval_min = row['min_interval']
             
-            # Določimo interval (Night mode logika)
-            if is_night:
-                current_interval = 15 if row['has_ultra'] else 30
-            else:
-                current_interval = row['min_interval']
-                
-            # Preverimo zadnji uspešen sken v logih
-            last_log = c.execute("""
-                SELECT timestamp FROM ScraperLogs 
-                WHERE url_id = ? AND status_code = 200 
+            # Preverimo zadnji sken v SEKUNDAH (zastonj in hitro)
+            # Gledamo status 200 (uspeh) ALI karkoli, da ne loopamo napak
+            last_scan_data = c.execute("""
+                SELECT (strftime('%s', 'now') - strftime('%s', timestamp_utc)) / 60 as mins_ago
+                FROM ScraperLogs 
+                WHERE url_id = ? 
                 ORDER BY id DESC LIMIT 1
             """, (u_id,)).fetchone()
             
-            # Pripravimo podatke za scraper
-            # 'url' ostane za tvoj izpis v konzoli, 'url_bin' pa za curl_cffi
-            entry_data = {
-                'url_id': u_id, 
-                'url': row['url'], 
-                'url_bin': row['url_bin'], 
-                'telegram_name': row['telegram_name']
-            }
-
-            if not last_log:
-                # Še nikoli skenirano (First Sync)
-                pending.append(entry_data)
-            else:
-                try:
-                    last_time = datetime.strptime(last_log['timestamp'], "%d.%m.%Y %H:%M:%S")
-                    if (now - last_time).total_seconds() / 60 >= (current_interval - 0.2):
-                        pending.append(entry_data)
-                except:
-                    pending.append(entry_data)
-                    
+            # Če še ni bilo skena ali je minilo dovolj časa
+            if last_scan_data is None or last_scan_data[0] >= (interval_min - 0.5):
+                pending.append({
+                    'url_id': u_id, 
+                    'url': row['url'], 
+                    'url_bin': row['url_bin'], 
+                    'telegram_name': row['telegram_name']
+                })
+                
         conn.close()
         return pending
 
