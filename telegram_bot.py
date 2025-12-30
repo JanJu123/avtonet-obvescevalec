@@ -344,7 +344,7 @@ async def packages_command(update: telegram.Update, context: telegram.ext.Contex
                 f"{emoji} <b>{pkg['label']} ({code})</b>\n"
                 f"• Število URL-jev: <code>{pkg['urls']}</code>\n"
                 f"• Interval osveževanja: <code>{pkg['interval']} min</code>\n"
-                f"• Cena: <b>{pkg['price']}€ / mesec</b>\n\n"
+                f"• Cena: <b>{float(pkg['price']):.2f}€ / mesec</b>\n\n"
             )
     
     msg += "----------------------------------\n"
