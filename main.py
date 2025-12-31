@@ -114,47 +114,48 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
             tekst = manager.format_telegram_message(oglas)
             slika = oglas.get("slika_url")
 
-        try:
-            # --- VARNO POŠILJANJE S FALLBACKOM ---
-            success = False
-            if slika and slika.startswith('http'):
-                try:
-                    await context.bot.send_photo(
-                        chat_id=chat_id, 
-                        photo=slika, 
-                        caption=tekst, 
-                        parse_mode="HTML"
-                    )
-                    success = True
-                except Exception as img_err:
-                    print(f"WARN: Napaka pri sliki (ID:{oglas['content_id']}): {img_err}. Poskušam samo tekst...")
-            
-            # Če slike ni ali pa je pošiljanje slike spodletelo
-            if not success:
-                await context.bot.send_message(
-                    chat_id=chat_id, 
-                    text=tekst, 
-                    parse_mode="HTML", 
-                    disable_web_page_preview=False
-                )
-            
-            db.add_sent_ad(chat_id, oglas['content_id'])
-            # Posodobimo tudi čas zadnjega obveščanja za tega uporabnika in URL
             try:
-                conn_upd = db.get_connection()
-                cur_upd = conn_upd.cursor()
-                now_slo = datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S")
-                cur_upd.execute(
-                    "UPDATE Tracking SET last_notified_at = ? WHERE telegram_id = ? AND url_id = ?",
-                    (now_slo, chat_id, oglas.get('url_id'))
-                )
-                conn_upd.commit()
-                conn_upd.close()
-            except Exception:
-                pass
-            await asyncio.sleep(0.5)
-        except Exception as e:
-            print(f"[{get_time()}] Kritična napaka pri pošiljanju uporabniku {chat_id}: {e}")
+                # --- VARNO POŠILJANJE S FALLBACKOM ---
+                success = False
+                if slika and isinstance(slika, str) and slika.startswith('http'):
+                    try:
+                        await context.bot.send_photo(
+                            chat_id=chat_id,
+                            photo=slika,
+                            caption=tekst,
+                            parse_mode="HTML"
+                        )
+                        success = True
+                    except Exception as img_err:
+                        print(f"WARN: Napaka pri sliki (ID:{oglas.get('content_id')}): {img_err}. Poskušam samo tekst...")
+
+                # Če slike ni ali pa je pošiljanje slike spodletelo
+                if not success:
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=tekst,
+                        parse_mode="HTML",
+                        disable_web_page_preview=False
+                    )
+
+                db.add_sent_ad(chat_id, oglas['content_id'])
+                # Posodobimo tudi čas zadnjega obveščanja za tega uporabnika in URL
+                try:
+                    conn_upd = db.get_connection()
+                    cur_upd = conn_upd.cursor()
+                    now_slo = datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+                    cur_upd.execute(
+                        "UPDATE Tracking SET last_notified_at = ? WHERE telegram_id = ? AND url_id = ?",
+                        (now_slo, chat_id, oglas.get('url_id'))
+                    )
+                    conn_upd.commit()
+                    conn_upd.close()
+                except Exception:
+                    pass
+
+                await asyncio.sleep(0.5)
+            except Exception as e:
+                print(f"[{get_time()}] Kritična napaka pri pošiljanju uporabniku {chat_id}: {e}")
         # (no per-user summary required)
     print(f"{B_GREEN}[{get_time()}] --- [ CIKEL KONČAN: Uspešno poslano ] ---{B_END}")
 
