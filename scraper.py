@@ -219,6 +219,9 @@ class Scraper:
                     self.db.reset_url_fail_count(u_id)
 
                 is_first = self.db.is_first_scan(u_id)
+                # Detect marker that indicates regular search results block
+                marker_text = "Redna ponudba po kriterijih iskanja:".lower()
+                page_has_marker = marker_text in (html or "").lower()
                 soup = BeautifulSoup(html, 'html.parser')
                 rows = soup.find_all('div', class_='GO-Results-Row')
                 
@@ -290,6 +293,58 @@ class Scraper:
                     continue
 
                 # --- AI PROCESIRANJE (Batching) ---
+                # If page contains marker and we found at least one new ad, check subsequent pages up to a limit
+                try:
+                    if page_has_marker and (len(ads_to_ai_batch) + len(final_results) > 0):
+                        import re
+                        max_pages = getattr(config, 'SCRAPER_MAX_PAGINATION_PAGES', 3)
+                        # Determine current page number if present
+                        m = re.search(r"stran=(\d+)", final_url)
+                        cur_page = int(m.group(1)) if m else 1
+
+                        # Fetch pages cur_page+1 .. cur_page+(max_pages-1)
+                        for p in range(cur_page + 1, cur_page + 1 + (max_pages - 1)):
+                            # build next page url
+                            if 'stran=' in final_url:
+                                next_url = re.sub(r"stran=\d+", f"stran={p}", final_url)
+                            else:
+                                sep = '&' if '?' in final_url else '?'
+                                next_url = final_url + f"{sep}stran={p}"
+
+                            next_html, next_bytes, next_status = self.get_latest_offers(next_url)
+                            if not next_html:
+                                # stop on fetch error
+                                break
+
+                            next_ads = self._get_new_ads_raw(next_html)
+                            if not next_ads:
+                                # no new ads on this page; continue to next page (still bounded)
+                                continue
+
+                            # process new ads from next page same as current page
+                            for ad in next_ads:
+                                cid = ad['id']
+                                existing = self.db.get_market_data_by_id(cid)
+                                if existing and existing.get('processed'):
+                                    continue
+                                try:
+                                    self.db.insert_market_placeholder(cid, ad.get('link'), ad.get('text'))
+                                except Exception:
+                                    pass
+                                try:
+                                    acquired = self.db.mark_market_processing(cid)
+                                except Exception:
+                                    acquired = False
+                                if acquired:
+                                    ads_to_ai_batch.append({
+                                        "id": cid,
+                                        "row_soup": None,
+                                        "text": ad.get('text'),
+                                        "link": ad.get('link'),
+                                        "slika_url": ad.get('slika_url')
+                                    })
+                except Exception:
+                    pass
                 # --- AI PROCESIRANJE ---
                 if ads_to_ai_batch:
                     # Flood Protection (max 5)
