@@ -296,7 +296,7 @@ class Scraper:
                 # If page contains marker and we found at least one new ad, check subsequent pages up to a limit
                 try:
                     if page_has_marker and (len(ads_to_ai_batch) + len(final_results) > 0):
-                        import re
+                        
                         max_pages = getattr(config, 'SCRAPER_MAX_PAGINATION_PAGES', 3)
                         # Determine current page number if present
                         m = re.search(r"stran=(\d+)", final_url)
