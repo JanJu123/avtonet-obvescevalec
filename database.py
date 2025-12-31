@@ -131,11 +131,55 @@ class Database:
             motor TEXT,
             link TEXT,
             raw_snippet TEXT,              -- Shranimo tisto, kar je AI dejansko bral (za debug)
+            processed INTEGER DEFAULT 0,   -- 0 = needs AI processing, 1 = processed
+            processing INTEGER DEFAULT 0,  -- 1 = currently being processed
             created_at DATETIME DEFAULT (strftime('%d.%m.%Y %H:%M:%S', 'now', 'localtime'))
+        )
+        """)
+        # Ensure 'ingested' column exists for MarketData (may be used later)
+        try:
+            cols = [r[1] for r in cursor.execute("PRAGMA table_info(MarketData);").fetchall()]
+            if 'ingested' not in cols:
+                cursor.execute("ALTER TABLE MarketData ADD COLUMN ingested INTEGER DEFAULT 0")
+                conn.commit()
+        except Exception:
+            pass
+
+        # 9. OFFERS: track last seen ad per URL (referenced in code)
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS Offers (
+            url_id INTEGER PRIMARY KEY,
+            content_id TEXT,
+            content TEXT,
+            last_updated DATETIME DEFAULT (strftime('%d.%m.%Y %H:%M:%S', 'now', 'localtime'))
+        )
+        """)
+
+        # 10. UserRequests: logging user-origin requests
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS UserRequests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            telegram_id INTEGER,
+            url_id INTEGER,
+            status_code INTEGER,
+            timestamp DATETIME DEFAULT (strftime('%d.%m.%Y %H:%M:%S', 'now', 'localtime'))
         )
         """)
 
         conn.commit()
+        # Ensure MarketData has new columns (for backward compatibility)
+        try:
+            cols = [r[1] for r in cursor.execute("PRAGMA table_info(MarketData);").fetchall()]
+            if 'processed' not in cols:
+                cursor.execute("ALTER TABLE MarketData ADD COLUMN processed INTEGER DEFAULT 0")
+            if 'processing' not in cols:
+                cursor.execute("ALTER TABLE MarketData ADD COLUMN processing INTEGER DEFAULT 0")
+            # Commit possible ALTERs
+            conn.commit()
+        except Exception:
+            # If MarketData doesn't exist yet or PRAGMA fails, ignore (it was just created above)
+            pass
+
         conn.close()
         print("Baza podatkov je uspešno pripravljena.")
 
@@ -1320,6 +1364,65 @@ class Database:
         res = c.execute("SELECT * FROM MarketData WHERE content_id = ?", (str(content_id),)).fetchone()
         conn.close()
         return dict(res) if res else None
+
+    def insert_market_placeholder(self, content_id, link, raw_snippet):
+        """Vstavi minimalen zapis v MarketData, ki označuje novo najden oglas (pred AI obdelavo)."""
+        conn = self.get_connection()
+        c = conn.cursor()
+        try:
+            c.execute("""
+                INSERT OR IGNORE INTO MarketData (content_id, link, raw_snippet, processed, processing)
+                VALUES (?, ?, ?, 0, 0)
+            """, (str(content_id), link, raw_snippet))
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"[DB ERROR] insert_market_placeholder: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def mark_market_processing(self, content_id):
+        """Set processing flag to 1 atomically so other workers skip AI."""
+        conn = self.get_connection()
+        c = conn.cursor()
+        try:
+            # Only set processing if processed=0 and processing=0
+            c.execute("""
+                UPDATE MarketData SET processing = 1
+                WHERE content_id = ? AND processed = 0 AND processing = 0
+            """, (str(content_id),))
+            conn.commit()
+            updated = c.rowcount
+            return updated > 0
+        except Exception as e:
+            print(f"[DB ERROR] mark_market_processing: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def update_market_data(self, content_id, data, raw_snippet=None):
+        """Posodobi MarketData z izluščenimi polji in označi kot processed=1."""
+        conn = self.get_connection()
+        c = conn.cursor()
+        try:
+            c.execute("""
+                UPDATE MarketData SET
+                    ime_avta = ?, cena = ?, leto_1_reg = ?, prevozenih = ?, gorivo = ?,
+                    menjalnik = ?, motor = ?, link = ?, raw_snippet = COALESCE(?, raw_snippet),
+                    processed = 1, processing = 0
+                WHERE content_id = ?
+            """, (
+                data.get('ime_avta'), data.get('cena'), data.get('leto_1_reg'), data.get('prevozenih'), data.get('gorivo'),
+                data.get('menjalnik'), data.get('motor'), data.get('link'), raw_snippet, str(content_id)
+            ))
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"[DB ERROR] update_market_data: {e}")
+            return False
+        finally:
+            conn.close()
 
     def insert_market_data(self, data, raw_snippet):
         """Shrani oglas v splošni arhiv trga za ML analitiko."""

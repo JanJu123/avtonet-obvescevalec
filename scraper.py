@@ -29,7 +29,13 @@ class Scraper:
         }
 
         try:
-            time.sleep(random.uniform(2, 4))
+            # Respect configurable fetch delays
+            try:
+                smin = float(config.FETCH_SLEEP_MIN)
+                smax = float(config.FETCH_SLEEP_MAX)
+            except Exception:
+                smin, smax = 2.0, 4.0
+            time.sleep(random.uniform(smin, smax))
             response = requests.get(url, impersonate="chrome120", headers=headers, timeout=30)
             
             status_code = response.status_code
@@ -252,14 +258,30 @@ class Scraper:
                             existing_ad['link'] = "https://www.avto.net" + href.replace("..", "")
                             final_results.append(existing_ad)
                         else:
-                            # Popolnoma nov oglas, ki gre v AI batch
-                            ads_to_ai_batch.append({
-                                "id": content_id,
-                                "row_soup": row,
-                                "text": self._clean_row_for_ai(row),
-                                "link": "https://www.avto.net" + href.replace("..", ""),
-                                "slika_url": None
-                            })
+                            # Popolnoma nov oglas: sledimo pravilu "first finder owns AI"
+                            # Vstavimo idempotentno placeholder v MarketData in poskusimo prevzeti processing lock.
+                            try:
+                                self.db.insert_market_placeholder(content_id, "https://www.avto.net" + href.replace("..", ""), self._clean_row_for_ai(row))
+                            except Exception:
+                                pass
+
+                            # Če uspemo nastaviti processing=1, potem ta worker obdeluje AI
+                            try:
+                                acquired = self.db.mark_market_processing(content_id)
+                            except Exception:
+                                acquired = False
+
+                            if acquired:
+                                ads_to_ai_batch.append({
+                                    "id": content_id,
+                                    "row_soup": row,
+                                    "text": self._clean_row_for_ai(row),
+                                    "link": "https://www.avto.net" + href.replace("..", ""),
+                                    "slika_url": None
+                                })
+                            else:
+                                # Nekdo drug bo obdelal ta oglas (master ali drug worker). Preskočimo AI tukaj.
+                                print(f"{B_YELLOW}[{get_time()}] ⏭️ Oglas {content_id} že v obdelavi drugje. Preskakujem AI.{B_END}")
 
                 if is_first:
                     print(f"[{get_time()}] 📥 Prvi sken za {u_name}: Sinhroniziram {len(all_ids_on_page)} oglasov.")
@@ -271,10 +293,15 @@ class Scraper:
                 # --- AI PROCESIRANJE ---
                 if ads_to_ai_batch:
                     # Flood Protection (max 5)
-                    if len(ads_to_ai_batch) > 5:
-                        to_mute_ids = [ad['id'] for ad in ads_to_ai_batch[5:]]
+                    # Limit per-user AI items using config.MAX_AI_PER_USER
+                    try:
+                        max_ai = int(config.MAX_AI_PER_USER)
+                    except Exception:
+                        max_ai = 5
+                    if len(ads_to_ai_batch) > max_ai:
+                        to_mute_ids = [ad['id'] for ad in ads_to_ai_batch[max_ai:]]
                         self.db.bulk_add_sent_ads(u_id, to_mute_ids)
-                        ads_to_ai_batch = ads_to_ai_batch[:5]
+                        ads_to_ai_batch = ads_to_ai_batch[:max_ai]
 
                     if config.USE_AI:
                         print(f"{B_YELLOW}[{get_time()}] 🤖 AI obdeluje {len(ads_to_ai_batch)} oglasov za {u_name}...{B_END}")
@@ -326,7 +353,13 @@ class Scraper:
             except Exception as e:
                 print(f"{B_RED}[{get_time()}] ❌ Kritična napaka pri URL {u_id}: {e}{B_END}")
             
-            time.sleep(random.uniform(1.5, 3))
+            # Pause between URL entries to avoid bursts
+            try:
+                esmin = float(config.ENTRY_SLEEP_MIN)
+                esmax = float(config.ENTRY_SLEEP_MAX)
+            except Exception:
+                esmin, esmax = 1.5, 3.0
+            time.sleep(random.uniform(esmin, esmax))
 
 # --- TEST ---
 if __name__ == "__main__":

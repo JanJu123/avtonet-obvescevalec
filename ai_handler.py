@@ -1,6 +1,11 @@
 import json
 import time
-from openai import OpenAI
+import os
+try:
+    from openai import OpenAI
+except Exception:
+    OpenAI = None
+import config
 
 # Poskusi uvoziti ključ, če ne gre, uporabi ročni vnos za test
 try:
@@ -79,6 +84,39 @@ class AIHandler:
         except Exception as e:
             print(f"❌ [AI ERROR] Napaka: {e}")
             return None
+
+
+# If testing, allow a lightweight mock AI handler to avoid external calls
+if getattr(config, 'USE_MOCK_AI', False) or os.getenv('USE_MOCK_AI', '0') == '1':
+    MOCK_AI_CALLS = 0
+
+    class MockAIHandler:
+        def __init__(self):
+            self.call_count_today = 0
+
+        def extract_ads_batch(self, raw_snippets):
+            global MOCK_AI_CALLS
+            if not raw_snippets:
+                return []
+            out = []
+            for item in raw_snippets:
+                cid = str(item.get('id'))
+                out.append({
+                    'content_id': cid,
+                    'ime_avta': f'Avto {cid}',
+                    'cena': '9.999 €',
+                    'leto_1_reg': '2020',
+                    'prevozenih': '100.000 km',
+                    'gorivo': 'diesel',
+                    'menjalnik': 'avtomatski',
+                    'motor': '1998 ccm, 110 kW',
+                    'link': item.get('link')
+                })
+            self.call_count_today += 1
+            MOCK_AI_CALLS += 1
+            return out
+
+    AIHandler = MockAIHandler
 
 
 
