@@ -1,6 +1,7 @@
 import json
 import time
 import os
+import datetime
 try:
     from openai import OpenAI
 except Exception:
@@ -32,8 +33,10 @@ class AIHandler:
         for idx, item in enumerate(raw_snippets):
             combined_text += f"OGLAS #{idx+1} [ID:{item['id']}]: {item['text']}\n---\n"
 
-        prompt = f"""
-        STREŽNIŠKO NAVODILO: Si robotski ekstraktor podatkov. 
+        current_year = datetime.datetime.now().year
+
+        instructions = f"""
+        STREŽNIŠKO NAVODILO: Si robotski ekstraktor podatkov.
         Tvoj odgovor mora biti IZKLJUČNO veljaven JSON seznam objektov brez dodatnega besedila.
 
         NUJNA PRAVILA ZA FORMATIRANJE:
@@ -46,11 +49,12 @@ class AIHandler:
         7. "menjalnik": "avtomatski" ali "ročni".
         8. "motor": Prostornina in moč, npr. "1968 ccm, 110 kW / 150 KM".
 
-        VAROVALKA: Če podatka ne najdeš, uporabi vrednost "Neznano". 
+        VAROVALKA: Če podatka ne najdeš, uporabi vrednost "Neznano".
         NIKOLI ne spreminjaj imen ključev (content_id, ime_avta, itd.), sicer sistem ne bo deloval.
 
-        PODATKI ZA OBDELAVO:
-        {combined_text}
+        - Če vidiš oznako 'Starost: NOVO', za letnik uporabi trenutno leto ({current_year}) in za kilometre '0 km'.
+        - Ceno vzemi iz polja AKCIJSKA CENA ali tisto, ki je najnižja v besedilu.
+
         """
 
         try:
@@ -58,13 +62,13 @@ class AIHandler:
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "Si precizen ekstraktor podatkov iz avtomobilskih oglasov. Vračaš samo čist JSON seznam."},
-                    {"role": "user", "content": prompt}
+                    {"role": "system", "content": instructions},
+                    {"role": "user", "content": combined_text}
                 ],
                 response_format={"type": "json_object"},
-                timeout=15
+                timeout=15,
             )
-            
+
             self.call_count_today += 1
             content = response.choices[0].message.content
             data = json.loads(content)
