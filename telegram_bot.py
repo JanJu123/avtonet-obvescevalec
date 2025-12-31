@@ -1009,9 +1009,9 @@ async def post_init(application: telegram.ext.Application) -> None:
             admin_commands, 
             scope=BotCommandScopeChat(chat_id=int(ADMIN_ID))
         )
-        print("✅ Ukazi za Admina in Uporabnike so nastavljeni.")
+        print("Ukazi za Admina in Uporabnike so nastavljeni.")
     except Exception as e:
-        print(f"⚠️ Napaka pri nastavljanju admin ukazov: {e}")
+        print(f"Napaka pri nastavljanju admin ukazov: {e}")
 
 
 async def send_dm_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):

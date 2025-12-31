@@ -50,7 +50,7 @@ class Scraper:
                     wire_size = decompressed_size
                     savings = 0.0
                 
-                print(f"✅ Dostop OK! [Ocenjen promet: {round(wire_size/1024, 1)} KB | Encoding: {encoding}]")
+                print(f"OK: Dostop uspešen. Ocenjen promet: {round(wire_size/1024, 1)} KB | Encoding: {encoding}")
                 return response.text, wire_size, 200
             else:
                 # Vrnemo status kodo (403, 404, 500...), da vemo kaj je narobe
@@ -58,7 +58,7 @@ class Scraper:
                 
         except Exception as e:
             # Če curl sploh ne more izvesti ukaza (npr. napačen port v URL)
-            print(f"❌ Napaka pri skeniranju (CURL): {e}")
+            print(f"ERROR: Napaka pri skeniranju (CURL): {e}")
             return None, 0, 0 # Status 0 = Network/CURL error
         
 
@@ -205,14 +205,14 @@ class Scraper:
                 else:
                     final_url = entry['url']
 
-                print(f"{B_CYAN}[{get_time()}] 🔍 Skeniram URL ID {u_id} (Uporabnik: {u_name})...{B_END}")
+                print(f"{B_CYAN}[{get_time()}] Skeniram URL ID {u_id} (Uporabnik: {u_name})...{B_END}")
                 
                 html, bytes_used, status_code = self.get_latest_offers(final_url)
                 
                 if not html:
                     current_fails = self.db.update_url_fail_count(u_id)
                     actual_error = f"HTTP {status_code}" if status_code != 0 else "CURL Error"
-                    print(f"{B_RED}[{get_time()}] ❌ {actual_error} ({current_fails}/3) za {u_name}{B_END}")
+                    print(f"{B_RED}[{get_time()}] ERROR: {actual_error} ({current_fails}/3) za {u_name}{B_END}")
                     self.db.log_scraper_run(u_id, status_code, 0, round(time.time() - start_time, 2), 0, actual_error)
                     continue
                 else:
@@ -251,7 +251,7 @@ class Scraper:
                         existing_ad = self.db.get_market_data_by_id(content_id)
                         
                         if existing_ad:
-                            print(f"{B_GREEN}[{get_time()}] ♻️ [REUSE] Oglas {content_id} najden v arhivu. Preskakujem AI.{B_END}")
+                            print(f"{B_GREEN}[{get_time()}] [REUSE] Oglas {content_id} najden v arhivu. Preskakujem AI.{B_END}")
                             # Pripravimo sliko in link iz trenutnega row-a (da sta vedno sveža)
                             img_tag = row.find('img')
                             existing_ad['slika_url'] = img_tag.get('data-src') or img_tag.get('src') if img_tag else None
@@ -281,10 +281,10 @@ class Scraper:
                                 })
                             else:
                                 # Nekdo drug bo obdelal ta oglas (master ali drug worker). Preskočimo AI tukaj.
-                                print(f"{B_YELLOW}[{get_time()}] ⏭️ Oglas {content_id} že v obdelavi drugje. Preskakujem AI.{B_END}")
+                                print(f"{B_YELLOW}[{get_time()}] Oglas {content_id} že v obdelavi drugje. Preskakujem AI.{B_END}")
 
                 if is_first:
-                    print(f"[{get_time()}] 📥 Prvi sken za {u_name}: Sinhroniziram {len(all_ids_on_page)} oglasov.")
+                    print(f"[{get_time()}] Prvi sken za {u_name}: Sinhroniziram {len(all_ids_on_page)} oglasov.")
                     self.db.bulk_add_sent_ads(u_id, all_ids_on_page)
                     self.db.log_scraper_run(u_id, 200, 0, round(time.time() - start_time, 2), bytes_used, "Initial Sync")
                     continue
@@ -304,9 +304,18 @@ class Scraper:
                         ads_to_ai_batch = ads_to_ai_batch[:max_ai]
 
                     if config.USE_AI:
-                        print(f"{B_YELLOW}[{get_time()}] 🤖 AI obdeluje {len(ads_to_ai_batch)} oglasov za {u_name}...{B_END}")
-                        ai_results = self.ai.extract_ads_batch(ads_to_ai_batch)
-                        
+                        print(f"{B_YELLOW}[{get_time()}] AI obdeluje {len(ads_to_ai_batch)} oglasov za {u_name}...{B_END}")
+                        try:
+                            ai_results = self.ai.extract_ads_batch(ads_to_ai_batch)
+                        except Exception as e:
+                            ai_results = None
+                            # Log AI failure for visibility
+                            try:
+                                for ad in ads_to_ai_batch:
+                                    self.db.log_ai_error(ad.get('id'), f"AI exception: {e}")
+                            except Exception:
+                                pass
+
                         if ai_results:
                             for ad_data in ai_results:
                                 ad_id = str(ad_data.get('content_id') or ad_data.get('id') or ad_data.get('ID'))
@@ -326,7 +335,12 @@ class Scraper:
                                     # TAKOJ SHRANIMO V MARKET DATA (Tukaj je zdaj varno!)
                                     self.db.insert_market_data(ad_data, orig['text'])
                         else:
-                            print(f"[{get_time()}] ⚠️ AI odpovedal, preklop na manual.")
+                            print(f"[{get_time()}] AI odpovedal, preklop na manual.")
+                            try:
+                                for ad in ads_to_ai_batch:
+                                    self.db.log_ai_error(ad.get('id'), 'AI returned no result for batch')
+                            except Exception:
+                                pass
 
                 # --- MANUAL FALLBACK (za tiste, ki še niso v final_results) ---
                 # Preverimo, če nam v ads_to_ai_batch manjka kakšen oglas (ker ga AI ni vrnil ali je USE_AI=False)
@@ -348,10 +362,10 @@ class Scraper:
                 duration = round(time.time() - start_time, 2)
                 self.db.log_scraper_run(u_id, 200, len(final_results), duration, bytes_used, "Success")
                 if final_results:
-                    print(f"✅ [{get_time()}] URL {u_id} končan ({len(final_results)} oglasov) v {duration}s.")
+                    print(f"OK [{get_time()}] URL {u_id} končan ({len(final_results)} oglasov) v {duration}s.")
 
             except Exception as e:
-                print(f"{B_RED}[{get_time()}] ❌ Kritična napaka pri URL {u_id}: {e}{B_END}")
+                print(f"{B_RED}[{get_time()}] Kritična napaka pri URL {u_id}: {e}{B_END}")
             
             # Pause between URL entries to avoid bursts
             try:
@@ -384,7 +398,7 @@ if __name__ == "__main__":
 
     # 4. Zagon scraperja
     print("\n" + "="*50)
-    print("🚀 ZAČENJAM BINARNI HYBRID TEST...")
+    print("ZAČENJAM BINARNI HYBRID TEST...")
     print("="*50)
     
     scraper = Scraper(DataBase=test_db)
@@ -393,5 +407,5 @@ if __name__ == "__main__":
     scraper.run(pending_test_list)
 
     print("\n" + "="*50)
-    print("🏁 TEST ZAKLJUČEN. Preveri loge zgoraj!")
+    print("TEST ZAKLJUČEN. Preveri loge zgoraj!")
     print("="*50)

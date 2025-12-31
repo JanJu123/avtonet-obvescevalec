@@ -22,18 +22,26 @@ class DataManager():
         placeholders = ', '.join(['?'] * len(filter_url_ids))
         
         # Poiščemo oglase, ki so v ScrapedData, a jih uporabnik še nima v SentAds
+        # Hkrati upoštevamo last_notified_at in user's scan_interval: pošljemo le, če
+        # last_notified_at is NULL ali je min za zadnje obvestilo >= scan_interval
         query = f"""
-            SELECT sd.*, t.telegram_id as target_user_id
+            SELECT sd.*, t.telegram_id as target_user_id, t.last_notified_at, us.scan_interval
             FROM ScrapedData sd
             JOIN Tracking t ON sd.url_id = t.url_id
+            JOIN Users us ON t.telegram_id = us.telegram_id
             WHERE sd.url_id IN ({placeholders})
+            AND us.is_active = 1
             AND NOT EXISTS (
                 SELECT 1 FROM SentAds sa 
                 WHERE sa.telegram_id = t.telegram_id 
                 AND sa.content_id = sd.content_id
             )
+            AND (
+                t.last_notified_at IS NULL
+                OR ( (strftime('%s','now') - strftime('%s', t.last_notified_at)) / 60.0 ) >= (us.scan_interval - 0.1)
+            )
         """
-        
+
         rows = c.execute(query, filter_url_ids).fetchall()
         conn.close()
         
@@ -41,24 +49,27 @@ class DataManager():
 
     def format_telegram_message(self, oglas):
         # --- PAMETNO ČIŠČENJE ---
-        ime = html.escape(str(oglas.get('ime_avta', 'Neznano')))
-        
-        # Cena (če manjka €, ga dodaj)
-        cena = oglas.get('cena', 'Po dogovoru').replace('\xa0', ' ').strip()
+        ime = html.escape(str(oglas.get('ime_avta') or 'Neznano'))
+
+        # Cena (če manjka €, ga dodaj) — handle None safely
+        cena_raw = oglas.get('cena')
+        cena = (str(cena_raw) if cena_raw is not None else 'Po dogovoru')
+        cena = cena.replace('\xa0', ' ').strip()
         if any(char.isdigit() for char in cena) and '€' not in cena:
             cena += " €"
             
-        leto = html.escape(str(oglas.get('leto_1_reg', 'Neznano')))
-        
+        leto = html.escape(str(oglas.get('leto_1_reg') or 'Neznano'))
+
         # Kilometri (če manjka km, ga dodaj)
-        km = str(oglas.get('prevozenih', 'Neznano')).strip()
+        km_raw = oglas.get('prevozenih')
+        km = (str(km_raw) if km_raw is not None else 'Neznano').strip()
         if any(char.isdigit() for char in km) and 'km' not in km.lower() and km != "Neznano":
             km += " km"
         
-        gorivo = html.escape(str(oglas.get('gorivo', 'Neznano'))).replace(' motor', '')
-        menjalnik = html.escape(str(oglas.get('menjalnik', 'Neznano')))
-        motor = html.escape(str(oglas.get('motor', 'Neznano')))
-        link = oglas.get('link', 'https://www.avto.net')
+        gorivo = html.escape(str(oglas.get('gorivo') or 'Neznano')).replace(' motor', '')
+        menjalnik = html.escape(str(oglas.get('menjalnik') or 'Neznano'))
+        motor = html.escape(str(oglas.get('motor') or 'Neznano'))
+        link = oglas.get('link') or 'https://www.avto.net'
 
         # Sestava sporočila
         msg = (

@@ -79,7 +79,7 @@ class AIHandler:
             return data
 
         except Exception as e:
-            print(f"❌ [AI ERROR] Napaka: {e}")
+            print(f"[AI ERROR] Napaka: {e}")
             return None
 
 
@@ -119,7 +119,7 @@ if getattr(config, 'USE_MOCK_AI', False) or os.getenv('USE_MOCK_AI', '0') == '1'
 
 
 if __name__ == "__main__":
-    print(f"🚀 Začenjam AI test na modelu: {AI_MODEL}...")
+    print(f"Začenjam AI test na modelu: {AI_MODEL}...")
     
     # 1. Pripravimo realne, "umazane" podatke, ki jih bi pobral BeautifulSoup
     test_data = [
@@ -145,6 +145,6 @@ if __name__ == "__main__":
     print("\n--- REZULTAT (vzelo je {} sek) ---".format(duration))
     if result:
         print(json.dumps(result, indent=4, ensure_ascii=False))
-        print("\n✅ Test uspešen! AI je pravilno prepoznal cene in tehnične podatke.")
+        print("Test uspešen. AI je pravilno prepoznal cene in tehnične podatke.")
     else:
-        print("❌ Test ni uspel. Preveri konzolo za napako.")
+        print("Test ni uspel. Preveri konzolo za napako.")

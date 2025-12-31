@@ -88,10 +88,20 @@ class MasterCrawler:
                             break
                     except Exception as e:
                         print(f"[MasterCrawler] AI batch error attempt {attempt}: {e}")
+                        try:
+                            for ad in to_process:
+                                self.db.log_ai_error(ad.get('id'), f"AI exception attempt {attempt}: {e}")
+                        except Exception:
+                            pass
                     # backoff
                     time.sleep(1 * (2 ** (attempt - 1)))
 
                 if not success_results:
+                    try:
+                        for ad in to_process:
+                            self.db.log_ai_error(ad.get('id'), 'AI returned no result after retries')
+                    except Exception:
+                        pass
                     # mark as unprocessed (clear processing flag) so others can retry later
                     for ad in to_process:
                         self.db.update_market_data(ad['id'], {'ime_avta': None, 'cena': None, 'leto_1_reg': None, 'prevozenih': None, 'gorivo': None, 'menjalnik': None, 'motor': None, 'link': ad.get('link')}, raw_snippet=ad.get('text'))
@@ -148,8 +158,27 @@ class MasterCrawler:
 # Async wrapper for job queue
 async def master_job(context: "telegram.ext.ContextTypes.DEFAULT_TYPE"):
     mc = MasterCrawler()
+    # Notify start (console + optional admin Telegram message)
+    start_msg = f"Master crawler starting: scanning {len(getattr(config,'MASTER_URLS',[]))} master URLs."
+    print(start_msg)
+    try:
+        if getattr(config, 'MASTER_NOTIFY_ADMIN', False) and config.ADMIN_ID:
+            await context.bot.send_message(chat_id=int(config.ADMIN_ID), text=start_msg)
+    except Exception:
+        pass
+
     # Run blocking master scan in a thread
-    await asyncio.to_thread(mc.run)
+    results = await asyncio.to_thread(mc.run)
+
+    # After run, summarize
+    processed_count = len(results) if results else 0
+    finish_msg = f"Master crawler finished: processed {processed_count} ads."
+    print(finish_msg)
+    try:
+        if getattr(config, 'MASTER_NOTIFY_ADMIN', False) and config.ADMIN_ID:
+            await context.bot.send_message(chat_id=int(config.ADMIN_ID), text=finish_msg)
+    except Exception:
+        pass
 
 
 if __name__ == '__main__':

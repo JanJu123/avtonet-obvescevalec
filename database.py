@@ -180,6 +180,16 @@ class Database:
             # If MarketData doesn't exist yet or PRAGMA fails, ignore (it was just created above)
             pass
 
+        # Ensure Tracking has last_notified_at column to track per-user notification times
+        try:
+            cols = [r[1] for r in cursor.execute("PRAGMA table_info(Tracking);").fetchall()]
+            if 'last_notified_at' not in cols:
+                cursor.execute("ALTER TABLE Tracking ADD COLUMN last_notified_at DATETIME")
+                conn.commit()
+        except Exception:
+            # If Tracking doesn't exist yet or PRAGMA fails, ignore
+            pass
+
         conn.close()
         print("Baza podatkov je uspešno pripravljena.")
 
@@ -219,7 +229,7 @@ class Database:
             ))
             conn.commit()
         except Exception as e:
-            print(f"❌ Napaka pri vstavljanju v ScrapedData: {e}")
+            print(f"[DB ERROR] Napaka pri vstavljanju v ScrapedData: {e}")
         finally:
             conn.close()
 
@@ -779,7 +789,26 @@ class Database:
             """, (url_id, status_code, found_count, duration, bytes_used, error_msg, now_slo))
             conn.commit()
         except Exception as e:
-            print(f"❌ [DB ERROR] log_scraper_run: {e}")
+            print(f"[DB ERROR] log_scraper_run: {e}")
+        finally:
+            conn.close()
+
+    def log_ai_error(self, content_id, error_msg):
+        """Log an AI-related error to ScraperLogs for visibility.
+        This creates a ScraperLogs row with url_id NULL and the error message.
+        """
+        conn = self.get_connection()
+        c = conn.cursor()
+        try:
+            now_slo = datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+            c.execute("""
+                INSERT INTO ScraperLogs (url_id, status_code, found_count, duration, bytes_used, error_msg, timestamp, timestamp_utc)
+                VALUES (NULL, 0, 0, 0, 0, ?, ?, datetime('now'))
+            """, (error_msg, now_slo))
+            conn.commit()
+        except Exception as e:
+            # Avoid crashing on logging failure
+            print(f"[DB] Failed to log AI error: {e}")
         finally:
             conn.close()
 
@@ -1448,7 +1477,7 @@ class Database:
             ))
             conn.commit()
         except Exception as e:
-            print(f"❌ [DB ERROR] MarketData insert: {e}")
+            print(f"[DB ERROR] MarketData insert: {e}")
         finally:
             conn.close()
 
