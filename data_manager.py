@@ -55,9 +55,14 @@ class DataManager():
         cena_raw = oglas.get('cena')
         cena = (str(cena_raw) if cena_raw is not None else 'Po dogovoru')
         cena = cena.replace('\xa0', ' ').strip()
-        if any(char.isdigit() for char in cena) and '€' not in cena:
+        # Dodaj € samo ako je cijeli broj ali "Po dogovoru" ili "Pokličite"
+        if cena != 'Po dogovoru' and cena != 'Pokličite' and any(char.isdigit() for char in cena) and '€' not in cena:
             cena += " €"
+        elif cena.count('€') > 1:
+            # Ako je duplo €, očisti
+            cena = cena.replace('€', '', cena.count('€')-1) + "€"
             
+
         leto = html.escape(str(oglas.get('leto_1_reg') or 'Neznano'))
 
         # Kilometri (če manjka km, ga dodaj)

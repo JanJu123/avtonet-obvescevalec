@@ -62,8 +62,8 @@ class AIHandler:
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": instructions},
-                    {"role": "user", "content": combined_text}
+                    {"role": "system", "content": "Si precizen ekstraktor podatkov iz avtomobilskih oglasov. Vračaš samo čist JSON seznam."},
+                    {"role": "user", "content": instructions + "\n\nPODATKI ZA OBDELAVO:\n" + combined_text}
                 ],
                 response_format={"type": "json_object"},
                 timeout=15,
@@ -83,7 +83,8 @@ class AIHandler:
             return data
 
         except Exception as e:
-            print(f"[AI ERROR] Napaka: {e}")
+            print(f"[AI ERROR] Napaka pri API pozivu: {e}")
+            print(f"[AI DEBUG] Broj oglasa za obrada: {len(raw_snippets)}")
             return None
 
 
