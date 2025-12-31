@@ -158,12 +158,16 @@ class MasterCrawler:
 # Async wrapper for job queue
 async def master_job(context: "telegram.ext.ContextTypes.DEFAULT_TYPE"):
     mc = MasterCrawler()
-    # Notify start (console + optional admin Telegram message)
-    start_msg = f"Master crawler starting: scanning {len(getattr(config,'MASTER_URLS',[]))} master URLs."
+    # Notify start (console + optional admin Telegram message) with color
+    B_MAGENTA = "\033[95m"
+    B_CYAN = "\033[96m"
+    B_END = "\033[0m"
+    start_msg = f"{B_MAGENTA}MASTER CRAWLER STARTING:{B_END} Scanning {len(getattr(config,'MASTER_URLS',[]))} master URLs."
     print(start_msg)
     try:
         if getattr(config, 'MASTER_NOTIFY_ADMIN', False) and config.ADMIN_ID:
-            await context.bot.send_message(chat_id=int(config.ADMIN_ID), text=start_msg)
+            # send plain-text to telegram (no ANSI)
+            await context.bot.send_message(chat_id=int(config.ADMIN_ID), text=f"MASTER CRAWLER: scanning {len(getattr(config,'MASTER_URLS',[]))} URLs")
     except Exception:
         pass
 
@@ -172,11 +176,11 @@ async def master_job(context: "telegram.ext.ContextTypes.DEFAULT_TYPE"):
 
     # After run, summarize
     processed_count = len(results) if results else 0
-    finish_msg = f"Master crawler finished: processed {processed_count} ads."
+    finish_msg = f"{B_CYAN}MASTER CRAWLER FINISHED:{B_END} processed {processed_count} ads."
     print(finish_msg)
     try:
         if getattr(config, 'MASTER_NOTIFY_ADMIN', False) and config.ADMIN_ID:
-            await context.bot.send_message(chat_id=int(config.ADMIN_ID), text=finish_msg)
+            await context.bot.send_message(chat_id=int(config.ADMIN_ID), text=f"MASTER CRAWLER finished: processed {processed_count} ads")
     except Exception:
         pass
 

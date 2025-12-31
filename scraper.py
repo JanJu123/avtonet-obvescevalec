@@ -381,14 +381,23 @@ class Scraper:
                                     # Pripravimo končne podatke
                                     ad_data['content_id'] = ad_id
                                     ad_data['link'] = orig['link']
-                                    img_tag = orig['row_soup'].find('img')
-                                    ad_data['slika_url'] = img_tag.get('data-src') or img_tag.get('src') if img_tag else None
-                                    
+                                    # orig['row_soup'] may be None for ads fetched from subsequent pages
+                                    row_soup = orig.get('row_soup')
+                                    if row_soup:
+                                        img_tag = row_soup.find('img')
+                                        ad_data['slika_url'] = img_tag.get('data-src') or img_tag.get('src') if img_tag else None
+                                    else:
+                                        # fallback to any slika_url provided by ad placeholder
+                                        ad_data['slika_url'] = orig.get('slika_url')
+
                                     # DODAMO V REZULTATE ZA UPORABNIKA
                                     final_results.append(ad_data)
-                                    
+
                                     # TAKOJ SHRANIMO V MARKET DATA (Tukaj je zdaj varno!)
-                                    self.db.insert_market_data(ad_data, orig['text'])
+                                    try:
+                                        self.db.insert_market_data(ad_data, orig.get('text'))
+                                    except Exception:
+                                        pass
                         else:
                             print(f"[{get_time()}] AI odpovedal, preklop na manual.")
                             try:
@@ -401,13 +410,32 @@ class Scraper:
                 # Preverimo, če nam v ads_to_ai_batch manjka kakšen oglas (ker ga AI ni vrnil ali je USE_AI=False)
                 for item in ads_to_ai_batch:
                     if not any(str(res.get('content_id')) == str(item['id']) for res in final_results):
-                        img_tag = item['row_soup'].find('img')
-                        img_url = img_tag.get('data-src') or img_tag.get('src') if img_tag else None
-                        manual_data = self._manual_parse_row(item['row_soup'], item['id'], item['link'], img_url)
-                        
+                        row_soup = item.get('row_soup')
+                        if row_soup:
+                            img_tag = row_soup.find('img')
+                            img_url = img_tag.get('data-src') or img_tag.get('src') if img_tag else None
+                            manual_data = self._manual_parse_row(row_soup, item['id'], item['link'], img_url)
+                        else:
+                            # No soup available (pagination placeholder) — create minimal manual_data
+                            manual_data = {
+                                'content_id': str(item['id']),
+                                'ime_avta': item.get('text', 'Neznano')[:100],
+                                'cena': 'Po dogovoru',
+                                'leto_1_reg': 'Neznano',
+                                'prevozenih': 'Neznano',
+                                'gorivo': 'Neznano',
+                                'menjalnik': 'Neznano',
+                                'motor': 'Neznano',
+                                'link': item.get('link'),
+                                'slika_url': item.get('slika_url')
+                            }
+
                         final_results.append(manual_data)
                         # Shranimo tudi ročno prebrane podatke v arhiv
-                        self.db.insert_market_data(manual_data, item['text'])
+                        try:
+                            self.db.insert_market_data(manual_data, item.get('text'))
+                        except Exception:
+                            pass
 
                 # --- VPIS V BAZO ZA TELEGRAM OBVESTILA ---
                 for data in final_results:

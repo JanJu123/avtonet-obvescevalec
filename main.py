@@ -97,10 +97,27 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
 
     print(f"{B_YELLOW}[{get_time()}] Pošiljam {len(novi_oglasi)} novih obvestil...{B_END}")
 
+    # Group ads by target user so we can send a short summary header per user
+    from collections import defaultdict
+    per_user = defaultdict(list)
     for oglas in novi_oglasi:
-        chat_id = oglas['target_user_id']
-        tekst = manager.format_telegram_message(oglas)
-        slika = oglas.get("slika_url")
+        per_user[oglas['target_user_id']].append(oglas)
+
+    for chat_id, ads in per_user.items():
+        # Header: inform user how many ads are being sent
+        header = (
+            f"Pozdravljeni!\n\nPoslano je bilo {len(ads)} novih oglasov, ki ustrezajo vašim iskalnim kriterijem.\n"
+            "Spodaj so posamezni oglasi.\n\n"
+            "Za upravljanje iskanj uporabite /list ali /info."
+        )
+        try:
+            await context.bot.send_message(chat_id=chat_id, text=header, parse_mode="HTML")
+        except Exception:
+            pass
+
+        for oglas in ads:
+            tekst = manager.format_telegram_message(oglas)
+            slika = oglas.get("slika_url")
 
         try:
             # --- VARNO POŠILJANJE S FALLBACKOM ---
