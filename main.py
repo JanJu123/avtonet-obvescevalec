@@ -95,7 +95,7 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
         print(f"{B_BLUE}[{get_time()}] INFO: Ni novih oglasov za te skene.{B_END}")
         return
 
-    print(f"{B_YELLOW}[{get_time()}] Pošiljam {len(novi_oglasi)} novih obvestil...{B_END}")
+    print(f"{B_YELLOW}[{get_time()}] Pošiljam oglase...{B_END}")
 
     # Group ads by target user so we can send a short summary header per user
     from collections import defaultdict
@@ -104,14 +104,9 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
         per_user[oglas['target_user_id']].append(oglas)
 
     for chat_id, ads in per_user.items():
-        # Header: inform user how many ads are being sent
-        header = (
-            f"Pozdravljeni!\n\nPoslano je bilo {len(ads)} novih oglasov, ki ustrezajo vašim iskalnim kriterijem.\n"
-            "Spodaj so posamezni oglasi.\n\n"
-            "Za upravljanje iskanj uporabite /list ali /info."
-        )
+        # Simple, colorized console log that ads are being sent (no recipient/count)
         try:
-            await context.bot.send_message(chat_id=chat_id, text=header, parse_mode="HTML")
+            print(f"{B_YELLOW}[{get_time()}] Pošiljam oglase...{B_END}")
         except Exception:
             pass
 
@@ -160,11 +155,7 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
             await asyncio.sleep(0.5)
         except Exception as e:
             print(f"[{get_time()}] Kritična napaka pri pošiljanju uporabniku {chat_id}: {e}")
-        # Log summary that ads were sent for this user
-        try:
-            print(f"[{get_time()}] POSLANO {len(ads)} oglasov uporabniku {chat_id}.")
-        except Exception:
-            pass
+        # (no per-user summary required)
     print(f"{B_GREEN}[{get_time()}] --- [ CIKEL KONČAN: Uspešno poslano ] ---{B_END}")
 
 
