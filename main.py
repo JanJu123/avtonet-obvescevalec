@@ -160,7 +160,11 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
             await asyncio.sleep(0.5)
         except Exception as e:
             print(f"[{get_time()}] Kritična napaka pri pošiljanju uporabniku {chat_id}: {e}")
-
+        # Log summary that ads were sent for this user
+        try:
+            print(f"[{get_time()}] POSLANO {len(ads)} oglasov uporabniku {chat_id}.")
+        except Exception:
+            pass
     print(f"{B_GREEN}[{get_time()}] --- [ CIKEL KONČAN: Uspešno poslano ] ---{B_END}")
 
 
