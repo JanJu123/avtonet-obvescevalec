@@ -61,8 +61,46 @@ class DataManager():
             """, filter_url_ids).fetchone()[0]
             print(f"[DEBUG] After MarketData filter: {md_check} ads")
             
+            # Debug: Count after SentAds filter
+            sentads_check = c.execute(f"""
+                SELECT COUNT(*) FROM ScrapedData sd
+                JOIN Tracking t ON sd.url_id = t.url_id
+                WHERE sd.url_id IN ({placeholders})
+                AND NOT EXISTS (
+                    SELECT 1 FROM SentAds sa 
+                    WHERE sa.telegram_id = t.telegram_id 
+                    AND sa.content_id = sd.content_id
+                )
+            """, filter_url_ids).fetchone()[0]
+            print(f"[DEBUG] After SentAds filter: {sentads_check} ads")
+            
+            # Debug: Count after interval check
+            interval_check = c.execute(f"""
+                SELECT COUNT(*) FROM ScrapedData sd
+                JOIN Tracking t ON sd.url_id = t.url_id
+                JOIN Users us ON t.telegram_id = us.telegram_id
+                WHERE sd.url_id IN ({placeholders})
+                AND us.is_active = 1
+                AND NOT EXISTS (
+                    SELECT 1 FROM SentAds sa 
+                    WHERE sa.telegram_id = t.telegram_id 
+                    AND sa.content_id = sd.content_id
+                )
+                AND EXISTS (
+                    SELECT 1 FROM MarketData md 
+                    WHERE md.content_id = sd.content_id
+                )
+                AND (
+                    t.last_notified_at IS NULL
+                    OR ( (strftime('%s','now','localtime') - strftime('%s', t.last_notified_at)) / 60.0 ) >= (us.scan_interval - 0.1)
+                )
+            """, filter_url_ids).fetchone()[0]
+            print(f"[DEBUG] After interval filter: {interval_check} ads (final)")
+            
             rows = c.execute(query, filter_url_ids).fetchall()
             print(f"[DEBUG] check_new_offers returned {len(rows)} ads to send")
+            if len(rows) != interval_check:
+                print(f"[DEBUG] WARNING: Count mismatch! Query said {interval_check} but got {len(rows)}")
         except Exception as e:
             print(f"[DEBUG] SQL Error in check_new_offers: {e}")
             print(f"[DEBUG] Query: {query}")
