@@ -43,8 +43,11 @@ class DataManager():
         # --- PAMETNO ČIŠČENJE ---
         ime = html.escape(str(oglas.get('ime_avta', 'Neznano')))
         
-        # Cena (če manjka €, ga dodaj)
-        cena = oglas.get('cena', 'Po dogovoru').replace('\xa0', ' ').strip()
+        # Cena (če manjka €, ga dodaj) — varovalka za None/številke
+        raw_cena = oglas.get('cena')
+        if not raw_cena:
+            raw_cena = 'Po dogovoru'
+        cena = str(raw_cena).replace('\xa0', ' ').strip()
         if any(char.isdigit() for char in cena) and '€' not in cena:
             cena += " €"
             
