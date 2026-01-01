@@ -267,18 +267,32 @@ class Scraper:
                     self.db.log_scraper_run(u_id, 200, 0, round(time.time() - start_time, 2), bytes_used, "Initial Sync")
                     continue
 
-                # --- AI PROCESIRANJE (Batching) ---
-                # --- AI PROCESIRANJE ---
+                # --- AI PROCESIRANJE (Batching with Parallel Processing) ---
                 if ads_to_ai_batch:
-                    # Flood Protection (max 5)
-                    if len(ads_to_ai_batch) > 5:
-                        to_mute_ids = [ad['id'] for ad in ads_to_ai_batch[5:]]
+                    # Flood Protection (max 10 per user)
+                    if len(ads_to_ai_batch) > 10:
+                        to_mute_ids = [ad['id'] for ad in ads_to_ai_batch[10:]]
                         self.db.bulk_add_sent_ads(u_id, to_mute_ids)
-                        ads_to_ai_batch = ads_to_ai_batch[:5]
+                        ads_to_ai_batch = ads_to_ai_batch[:10]
 
                     if config.USE_AI:
                         print(f"{B_YELLOW}[{get_time()}] 🤖 AI obdeluje {len(ads_to_ai_batch)} oglasov za {u_name}...{B_END}")
-                        ai_results = self.ai.extract_ads_batch(ads_to_ai_batch)
+                        
+                        # PARALLEL PROCESSING: Split into chunks and process simultaneously
+                        chunk_size = 5  # Process 5 ads per AI call
+                        chunks = [ads_to_ai_batch[i:i + chunk_size] for i in range(0, len(ads_to_ai_batch), chunk_size)]
+                        
+                        import concurrent.futures
+                        ai_results = []
+                        
+                        # Process up to 3 chunks in parallel
+                        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                            future_to_chunk = {executor.submit(self.ai.extract_ads_batch, chunk): chunk for chunk in chunks}
+                            
+                            for future in concurrent.futures.as_completed(future_to_chunk):
+                                chunk_results = future.result()
+                                if chunk_results:
+                                    ai_results.extend(chunk_results)
                         
                         if ai_results:
                             for ad_data in ai_results:
