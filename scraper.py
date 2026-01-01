@@ -255,11 +255,9 @@ class Scraper:
                         
                         if existing_ad:
                             print(f"{B_GREEN}[{get_time()}] [REUSE] Oglas {content_id} najden v arhivu. Preskakujem AI.{B_END}")
-                            # Pripravimo sliko in link iz trenutnega row-a (da sta vedno sveža)
-                            img_tag = row.find('img')
-                            existing_ad['slika_url'] = img_tag.get('data-src') or img_tag.get('src') if img_tag else None
-                            existing_ad['link'] = "https://www.avto.net" + href.replace("..", "")
-                            final_results.append(existing_ad)
+                            # VAŽNO: [REUSE] oglase NE dodavamo u final_results jer su već poslani!
+                            # Samo ih označimo kao obrađene u SentAds
+                            self.db.mark_as_sent(u_id, content_id)
                         else:
                             # Popolnoma nov oglas: sledimo pravilu "first finder owns AI"
                             # Vstavimo idempotentno placeholder v MarketData in poskusimo prevzeti processing lock.
