@@ -262,27 +262,14 @@ class Scraper:
                             ad_data['slika_url'] = img_tag.get('data-src') or img_tag.get('src') if img_tag else None
                             final_results.append(ad_data)
                         else:
-                            # Nov oglas - potrebuje AI
+                            # Nov oglas - dodaj v AIQueue za obdelavo
+                            link = "https://www.avto.net" + href.replace("..", "")
+                            raw_snippet = self._clean_row_for_ai(row)
                             try:
-                                self.db.insert_market_placeholder(content_id, "https://www.avto.net" + href.replace("..", ""), self._clean_row_for_ai(row))
-                            except Exception:
-                                pass
-
-                            try:
-                                acquired = self.db.mark_market_processing(content_id)
-                            except Exception:
-                                acquired = False
-
-                            if acquired:
-                                ads_to_ai_batch.append({
-                                    "id": content_id,
-                                    "row_soup": row,
-                                    "text": self._clean_row_for_ai(row),
-                                    "link": "https://www.avto.net" + href.replace("..", ""),
-                                    "slika_url": None
-                                })
-                            else:
-                                print(f"{B_YELLOW}[{get_time()}] Oglas {content_id} že v obdelavi drugje.{B_END}")
+                                self.db.add_to_ai_queue(content_id, link, raw_snippet)
+                                print(f"{B_YELLOW}[{get_time()}] Oglas {content_id} dodan v AIQueue.{B_END}")
+                            except Exception as e:
+                                print(f"{B_RED}[{get_time()}] Napaka pri dodajanju v AIQueue: {e}{B_END}")
 
                 if is_first:
                     print(f"[{get_time()}] Prvi sken za {u_name}: Sinhroniziram {len(all_ids_on_page)} oglasov.")
@@ -290,150 +277,40 @@ class Scraper:
                     self.db.log_scraper_run(u_id, 200, 0, round(time.time() - start_time, 2), bytes_used, "Initial Sync")
                     continue
 
-                # --- AI PROCESIRANJE (Batching) ---
-                # If page contains marker and we found at least one new ad, check subsequent pages up to a limit
-                try:
-                    if page_has_marker and (len(ads_to_ai_batch) + len(final_results) > 0):
-                        
-                        max_pages = getattr(config, 'SCRAPER_MAX_PAGINATION_PAGES', 3)
-                        # Determine current page number if present
-                        m = re.search(r"stran=(\d+)", final_url)
-                        cur_page = int(m.group(1)) if m else 1
-
-                        # Fetch pages cur_page+1 .. cur_page+(max_pages-1)
-                        for p in range(cur_page + 1, cur_page + 1 + (max_pages - 1)):
-                            # build next page url
-                            if 'stran=' in final_url:
-                                next_url = re.sub(r"stran=\d+", f"stran={p}", final_url)
-                            else:
-                                sep = '&' if '?' in final_url else '?'
-                                next_url = final_url + f"{sep}stran={p}"
-
-                            next_html, next_bytes, next_status = self.get_latest_offers(next_url)
-                            if not next_html:
-                                # stop on fetch error
-                                break
-
-                            next_ads = self._get_new_ads_raw(next_html)
-                            if not next_ads:
-                                # no new ads on this page; continue to next page (still bounded)
-                                continue
-
-                            # process new ads from next page same as current page
-                            for ad in next_ads:
-                                cid = ad['id']
-                                existing = self.db.get_market_data_by_id(cid)
-                                if existing and existing.get('processed'):
-                                    continue
-                                try:
-                                    self.db.insert_market_placeholder(cid, ad.get('link'), ad.get('text'))
-                                except Exception:
-                                    pass
-                                try:
-                                    acquired = self.db.mark_market_processing(cid)
-                                except Exception:
-                                    acquired = False
-                                if acquired:
-                                    ads_to_ai_batch.append({
-                                        "id": cid,
-                                        "row_soup": None,
-                                        "text": ad.get('text'),
-                                        "link": ad.get('link'),
-                                        "slika_url": ad.get('slika_url')
-                                    })
-                except Exception:
-                    pass
-                # --- AI PROCESIRANJE ---
-                if ads_to_ai_batch:
-                    # Flood Protection (max 5)
-                    # Limit per-user AI items using config.MAX_AI_PER_USER
+                # --- AI PROCESIRANJE (from ads added to AIQueue) ---
+                # Process pending AI items if enabled
+                if config.USE_AI and len(final_results) > 0:
+                    print(f"{B_YELLOW}[{get_time()}] AI obdeluje {len(final_results)} oglasov za {u_name}...{B_END}")
                     try:
-                        max_ai = int(config.MAX_AI_PER_USER)
-                    except Exception:
-                        max_ai = 5
-                    if len(ads_to_ai_batch) > max_ai:
-                        to_mute_ids = [ad['id'] for ad in ads_to_ai_batch[max_ai:]]
-                        self.db.bulk_add_sent_ads(u_id, to_mute_ids)
-                        ads_to_ai_batch = ads_to_ai_batch[:max_ai]
-
-                    if config.USE_AI:
-                        print(f"{B_YELLOW}[{get_time()}] AI obdeluje {len(ads_to_ai_batch)} oglasov za {u_name}...{B_END}")
-                        try:
-                            ai_results = self.ai.extract_ads_batch(ads_to_ai_batch)
-                        except Exception as e:
-                            ai_results = None
-                            # Log AI failure for visibility
-                            try:
-                                for ad in ads_to_ai_batch:
-                                    self.db.log_ai_error(ad.get('id'), f"AI exception: {e}")
-                            except Exception:
-                                pass
-
+                        # Convert final_results to AI batch format
+                        ai_batch = [{
+                            "id": str(data.get('content_id')),
+                            "text": data.get('ime_avta', 'Neznano'),
+                            "link": data.get('link'),
+                            "row_soup": None
+                        } for data in final_results]
+                        
+                        ai_results = self.ai.extract_ads_batch(ai_batch)
+                        
                         if ai_results:
-                            for ad_data in ai_results:
-                                ad_id = str(ad_data.get('content_id') or ad_data.get('id') or ad_data.get('ID'))
-                                # Poiščemo pripadajoč originalen snippet
-                                orig = next((x for x in ads_to_ai_batch if str(x['id']) == ad_id), None)
-                                
-                                if orig:
-                                    # Pripravimo končne podatke
-                                    ad_data['content_id'] = ad_id
-                                    ad_data['link'] = orig['link']
-                                    # orig['row_soup'] may be None for ads fetched from subsequent pages
-                                    row_soup = orig.get('row_soup')
-                                    if row_soup:
-                                        img_tag = row_soup.find('img')
-                                        ad_data['slika_url'] = img_tag.get('data-src') or img_tag.get('src') if img_tag else None
-                                    else:
-                                        # fallback to any slika_url provided by ad placeholder
-                                        ad_data['slika_url'] = orig.get('slika_url')
-
-                                    # DODAMO V REZULTATE ZA UPORABNIKA
-                                    final_results.append(ad_data)
-
-                                    # TAKOJ SHRANIMO V MARKET DATA (Tukaj je zdaj varno!)
-                                    try:
-                                        self.db.insert_market_data(ad_data, orig.get('text'))
-                                    except Exception:
-                                        pass
-                        else:
-                            print(f"[{get_time()}] AI odpovedal, preklop na manual.")
-                            try:
-                                for ad in ads_to_ai_batch:
-                                    self.db.log_ai_error(ad.get('id'), 'AI returned no result for batch')
-                            except Exception:
-                                pass
-
-                # --- MANUAL FALLBACK (za tiste, ki še niso v final_results) ---
-                # Preverimo, če nam v ads_to_ai_batch manjka kakšen oglas (ker ga AI ni vrnil ali je USE_AI=False)
-                for item in ads_to_ai_batch:
-                    if not any(str(res.get('content_id')) == str(item['id']) for res in final_results):
-                        row_soup = item.get('row_soup')
-                        if row_soup:
-                            img_tag = row_soup.find('img')
-                            img_url = img_tag.get('data-src') or img_tag.get('src') if img_tag else None
-                            manual_data = self._manual_parse_row(row_soup, item['id'], item['link'], img_url)
-                        else:
-                            # No soup available (pagination placeholder) — create minimal manual_data
-                            manual_data = {
-                                'content_id': str(item['id']),
-                                'ime_avta': item.get('text', 'Neznano')[:100],
-                                'cena': 'Po dogovoru',
-                                'leto_1_reg': 'Neznano',
-                                'prevozenih': 'Neznano',
-                                'gorivo': 'Neznano',
-                                'menjalnik': 'Neznano',
-                                'motor': 'Neznano',
-                                'link': item.get('link'),
-                                'slika_url': item.get('slika_url')
-                            }
-
-                        final_results.append(manual_data)
-                        # Shranimo tudi ročno prebrane podatke v arhiv
-                        try:
-                            self.db.insert_market_data(manual_data, item.get('text'))
-                        except Exception:
-                            pass
+                            # Merge AI results with final_results
+                            for ai_data in ai_results:
+                                content_id = str(ai_data.get('content_id') or ai_data.get('id'))
+                                # Update the corresponding entry in final_results
+                                for i, item in enumerate(final_results):
+                                    if str(item['content_id']) == content_id:
+                                        final_results[i].update(ai_data)
+                                        break
+                            
+                            # Save all enriched data to MarketData
+                            for data in final_results:
+                                try:
+                                    self.db.insert_market_data(data, data.get('ime_avta'))
+                                except Exception as e:
+                                    print(f"[DB ERROR] insert_market_data: {e}")
+                        
+                    except Exception as e:
+                        print(f"{B_RED}[{get_time()}] AI napaka: {e}{B_END}")
 
                 # --- VPIS V BAZO ZA TELEGRAM OBVESTILA ---
                 for data in final_results:

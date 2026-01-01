@@ -1453,6 +1453,75 @@ class Database:
         finally:
             conn.close()
 
+    # --- AIQueue Methods (NEW ARCHITECTURE) ---
+    
+    def add_to_ai_queue(self, content_id, link, raw_snippet, basic_info=None):
+        """Add ad to AI processing queue"""
+        conn = self.get_connection()
+        c = conn.cursor()
+        try:
+            c.execute("""
+                INSERT OR IGNORE INTO AIQueue (content_id, link, raw_snippet, basic_info, attempts)
+                VALUES (?, ?, ?, ?, 0)
+            """, (str(content_id), link, raw_snippet, basic_info))
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"[DB ERROR] add_to_ai_queue: {e}")
+            return False
+        finally:
+            conn.close()
+    
+    def get_ai_queue_items(self, limit=10, max_attempts=3):
+        """Get ads ready for AI processing"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        try:
+            rows = c.execute("""
+                SELECT * FROM AIQueue 
+                WHERE attempts < ? 
+                ORDER BY created_at ASC 
+                LIMIT ?
+            """, (max_attempts, limit)).fetchall()
+            return [dict(row) for row in rows]
+        except Exception as e:
+            print(f"[DB ERROR] get_ai_queue_items: {e}")
+            return []
+        finally:
+            conn.close()
+    
+    def remove_from_ai_queue(self, content_id):
+        """Remove ad from AI queue after processing"""
+        conn = self.get_connection()
+        c = conn.cursor()
+        try:
+            c.execute("DELETE FROM AIQueue WHERE content_id = ?", (str(content_id),))
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"[DB ERROR] remove_from_ai_queue: {e}")
+            return False
+        finally:
+            conn.close()
+    
+    def increment_ai_queue_attempts(self, content_id, error_msg=None):
+        """Increment attempts counter and log error"""
+        conn = self.get_connection()
+        c = conn.cursor()
+        try:
+            c.execute("""
+                UPDATE AIQueue SET attempts = attempts + 1, last_error = ? 
+                WHERE content_id = ?
+            """, (error_msg, str(content_id)))
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"[DB ERROR] increment_ai_queue_attempts: {e}")
+            return False
+        finally:
+            conn.close()
+    
     def insert_market_data(self, data, raw_snippet):
         """Shrani oglas v splošni arhiv trga za ML analitiko."""
         conn = self.get_connection()
@@ -1461,8 +1530,8 @@ class Database:
             c.execute("""
                 INSERT OR IGNORE INTO MarketData (
                     content_id, ime_avta, cena, leto_1_reg, 
-                    prevozenih, gorivo, menjalnik, motor, link, raw_snippet
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    prevozenih, gorivo, menjalnik, motor, link, raw_snippet, enriched
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
             """, (
                 str(data.get('content_id')),
                 data.get('ime_avta'),
