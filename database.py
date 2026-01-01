@@ -1396,6 +1396,28 @@ class Database:
         conn.close()
         return dict(res) if res else None
 
+    def check_user_sent_ad(self, telegram_id, content_id):
+        """Preveri ali je uporabnik že videl ta oglas (ali je v SentAds)."""
+        conn = self.get_connection()
+        c = conn.cursor()
+        res = c.execute(
+            "SELECT 1 FROM SentAds WHERE telegram_id = ? AND content_id = ?",
+            (telegram_id, str(content_id))
+        ).fetchone()
+        conn.close()
+        return res is not None
+
+    def market_data_exists(self, content_id):
+        """Preveri ali oglas že obstaja v MarketData."""
+        conn = self.get_connection()
+        c = conn.cursor()
+        res = c.execute(
+            "SELECT 1 FROM MarketData WHERE content_id = ?",
+            (str(content_id),)
+        ).fetchone()
+        conn.close()
+        return res is not None
+
     def insert_market_placeholder(self, content_id, link, raw_snippet):
         """Vstavi minimalen zapis v MarketData, ki označuje novo najden oglas (pred AI obdelavo)."""
         conn = self.get_connection()

@@ -246,23 +246,27 @@ class Scraper:
                     content_id = str(match.group(1))
                     all_ids_on_page.append(content_id)
 
-                    # NOVA LOGIKA: Vsi oglasi gredo v ScrapedData (unfiltered)
-                    # Potem check_new_offers() filtrira po MarketData
+                    # NOVA LOGIKA: Preverimo ali je USER že videl ta oglas (SentAds)
+                    # Ne preverimo globalnega MarketData, ker je to za AI procesiranje
                     if not is_first:
-                        # Preverimo MarketData za AI reuse
-                        existing_ad = self.db.get_market_data_by_id(content_id)
+                        # Preverimo SentAds za TEGA UPORABNIKA
+                        already_sent_to_user = self.db.check_user_sent_ad(u_id, content_id)
                         
-                        if existing_ad:
-                            # [REUSE] iz MarketData - takoj dodamo v final_results brez AI
-                            print(f"{B_GREEN}[{get_time()}] [REUSE] Oglas {content_id} najden v arhivu.{B_END}")
-                            ad_data = dict(existing_ad)  # Convert Row to dict
-                            ad_data['content_id'] = content_id
-                            ad_data['link'] = "https://www.avto.net" + href.replace("..", "")
+                        if already_sent_to_user:
+                            # [REUSE] - ta uporabnik je že videl ta oglas
+                            print(f"{B_GREEN}[{get_time()}] [REUSE] Oglas {content_id} že videl.{B_END}")
+                            # Vseeno ga dodamo v final_results, da gre v ScrapedData
+                            # check_new_offers pa ga ne bo poslal ker je že v SentAds
+                            link = "https://www.avto.net" + href.replace("..", "")
                             img_tag = row.find('img')
-                            ad_data['slika_url'] = img_tag.get('data-src') or img_tag.get('src') if img_tag else None
+                            ad_data = {
+                                'content_id': content_id,
+                                'link': link,
+                                'slika_url': img_tag.get('data-src') or img_tag.get('src') if img_tag else None
+                            }
                             final_results.append(ad_data)
                         else:
-                            # Nov oglas - add to batch for AI processing
+                            # Nov oglas ZA TEGA UPORABNIKA - add to batch for AI processing
                             link = "https://www.avto.net" + href.replace("..", "")
                             raw_snippet = self._clean_row_for_ai(row)
                             ads_to_ai_batch.append({
@@ -308,12 +312,15 @@ class Scraper:
                                     # Add to final_results
                                     final_results.append(ai_data)
                                     
-                                    # Save to MarketData with enriched=0
-                                    try:
-                                        self.db.insert_market_data(ai_data, orig.get('text'))
-                                        print(f"[DEBUG] Inserted {content_id} into MarketData")
-                                    except Exception as e:
-                                        print(f"[DB ERROR] insert_market_data: {e}")
+                                    # Save to MarketData SAMO AKO ŠE NIMA (unique content_id)
+                                    if not self.db.market_data_exists(content_id):
+                                        try:
+                                            self.db.insert_market_data(ai_data, orig.get('text'))
+                                            print(f"[DEBUG] Inserted {content_id} into MarketData")
+                                        except Exception as e:
+                                            print(f"[DB ERROR] insert_market_data: {e}")
+                                    else:
+                                        print(f"[DEBUG] {content_id} already exists in MarketData, skipping insert")
                                 else:
                                     print(f"[DEBUG] ❌ SKIPPED: No matching orig found for AI result {content_id}")
                                     print(f"[DEBUG] Available IDs in ads_to_ai_batch: {[str(x['id']) for x in ads_to_ai_batch]}")
