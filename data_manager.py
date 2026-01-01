@@ -47,7 +47,22 @@ class DataManager():
         """
 
         try:
+            print(f"[DEBUG] check_new_offers querying URLs: {filter_url_ids}")
+            
+            # Debug: Count ads in ScrapedData
+            sd_count = c.execute(f"SELECT COUNT(*) FROM ScrapedData WHERE url_id IN ({placeholders})", filter_url_ids).fetchone()[0]
+            print(f"[DEBUG] ScrapedData has {sd_count} ads for these URLs")
+            
+            # Debug: Count after MarketData filter
+            md_check = c.execute(f"""
+                SELECT COUNT(*) FROM ScrapedData sd
+                WHERE sd.url_id IN ({placeholders})
+                AND EXISTS (SELECT 1 FROM MarketData md WHERE md.content_id = sd.content_id)
+            """, filter_url_ids).fetchone()[0]
+            print(f"[DEBUG] After MarketData filter: {md_check} ads")
+            
             rows = c.execute(query, filter_url_ids).fetchall()
+            print(f"[DEBUG] check_new_offers returned {len(rows)} ads to send")
         except Exception as e:
             print(f"[DEBUG] SQL Error in check_new_offers: {e}")
             print(f"[DEBUG] Query: {query}")
