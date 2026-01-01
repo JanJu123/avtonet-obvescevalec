@@ -262,14 +262,16 @@ class Scraper:
                             ad_data['slika_url'] = img_tag.get('data-src') or img_tag.get('src') if img_tag else None
                             final_results.append(ad_data)
                         else:
-                            # Nov oglas - dodaj v AIQueue za obdelavo
+                            # Nov oglas - add to batch for AI processing
                             link = "https://www.avto.net" + href.replace("..", "")
                             raw_snippet = self._clean_row_for_ai(row)
-                            try:
-                                self.db.add_to_ai_queue(content_id, link, raw_snippet)
-                                print(f"{B_YELLOW}[{get_time()}] Oglas {content_id} dodan v AIQueue.{B_END}")
-                            except Exception as e:
-                                print(f"{B_RED}[{get_time()}] Napaka pri dodajanju v AIQueue: {e}{B_END}")
+                            ads_to_ai_batch.append({
+                                "id": content_id,
+                                "row_soup": row,
+                                "text": raw_snippet,
+                                "link": link,
+                                "slika_url": None
+                            })
 
                 if is_first:
                     print(f"[{get_time()}] Prvi sken za {u_name}: Sinhroniziram {len(all_ids_on_page)} oglasov.")
@@ -277,38 +279,39 @@ class Scraper:
                     self.db.log_scraper_run(u_id, 200, 0, round(time.time() - start_time, 2), bytes_used, "Initial Sync")
                     continue
 
-                # --- AI PROCESIRANJE (from ads added to AIQueue) ---
-                # Process pending AI items if enabled
-                if config.USE_AI and len(final_results) > 0:
-                    print(f"{B_YELLOW}[{get_time()}] AI obdeluje {len(final_results)} oglasov za {u_name}...{B_END}")
+                # --- AI PROCESIRANJE (only for NEW ads in ads_to_ai_batch) ---
+                if ads_to_ai_batch and config.USE_AI:
+                    print(f"{B_YELLOW}[{get_time()}] AI obdeluje {len(ads_to_ai_batch)} oglasov za {u_name}...{B_END}")
                     try:
-                        # Convert final_results to AI batch format
-                        ai_batch = [{
-                            "id": str(data.get('content_id')),
-                            "text": data.get('ime_avta', 'Neznano'),
-                            "link": data.get('link'),
-                            "row_soup": None
-                        } for data in final_results]
-                        
-                        ai_results = self.ai.extract_ads_batch(ai_batch)
+                        ai_results = self.ai.extract_ads_batch(ads_to_ai_batch)
                         
                         if ai_results:
-                            # Merge AI results with final_results
+                            # Process AI results and add to final_results
                             for ai_data in ai_results:
                                 content_id = str(ai_data.get('content_id') or ai_data.get('id'))
-                                # Update the corresponding entry in final_results
-                                for i, item in enumerate(final_results):
-                                    if str(item['content_id']) == content_id:
-                                        final_results[i].update(ai_data)
-                                        break
-                            
-                            # Save all enriched data to MarketData
-                            for data in final_results:
-                                try:
-                                    self.db.insert_market_data(data, data.get('ime_avta'))
-                                except Exception as e:
-                                    print(f"[DB ERROR] insert_market_data: {e}")
-                        
+                                # Find the original ad data
+                                orig = next((x for x in ads_to_ai_batch if str(x['id']) == content_id), None)
+                                
+                                if orig:
+                                    ai_data['content_id'] = content_id
+                                    ai_data['link'] = orig['link']
+                                    row_soup = orig.get('row_soup')
+                                    if row_soup:
+                                        img_tag = row_soup.find('img')
+                                        ai_data['slika_url'] = img_tag.get('data-src') or img_tag.get('src') if img_tag else None
+                                    else:
+                                        ai_data['slika_url'] = orig.get('slika_url')
+                                    
+                                    # Add to final_results
+                                    final_results.append(ai_data)
+                                    
+                                    # Save to MarketData with enriched=0
+                                    try:
+                                        self.db.insert_market_data(ai_data, orig.get('text'))
+                                    except Exception as e:
+                                        print(f"[DB ERROR] insert_market_data: {e}")
+                        else:
+                            print(f"{B_RED}[{get_time()}] AI vrnil prazen rezultat.{B_END}")
                     except Exception as e:
                         print(f"{B_RED}[{get_time()}] AI napaka: {e}{B_END}")
 
