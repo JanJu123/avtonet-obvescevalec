@@ -89,6 +89,7 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
         except:
             pass
 
+    print(f"{B_CYAN}[{get_time()}] Zaključil scraping. Preverjam nove oglase...{B_END}")
     novi_oglasi = manager.check_new_offers(filter_url_ids=pending_ids)
     
     if not novi_oglasi:
