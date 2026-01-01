@@ -237,16 +237,19 @@ class Scraper:
                     content_id = str(match.group(1))
                     all_ids_on_page.append(content_id)
 
-                    # Če je oglas nov za tega uporabnika...
-                    if not is_first and self.db.is_ad_new(content_id):
+                    # Če je oglas nov za tega uporabnika (ali je prvi sken)...
+                    if is_first or self.db.is_ad_new(content_id):
                         
                         # --- NOVO: PREVERIMO ARHIV (MarketData) ---
                         # Če je nekdo drug ta avto že ulovil, ne trošimo AI-ja!
                         existing_ad = self.db.get_market_data_by_id(content_id)
                         
                         if existing_ad:
-                            # [REUSE] - Ad exists in MarketData, skip AI but DON'T add to final_results
-                            # (we don't want to send it to user again)
+                            # [REUSE] - Ad exists in MarketData, skip AI but add to final_results
+                            # (user should see it on first scan, but not on subsequent scans)
+                            if is_first:
+                                # On first scan, add to results so user gets them
+                                final_results.append(existing_ad)
                             print(f"{B_GREEN}[{get_time()}] ♻️ [REUSE] Oglas {content_id} najden v arhivu. Preskakujem AI.{B_END}")
                         else:
                             # Popolnoma nov oglas, ki gre v AI batch
@@ -257,12 +260,6 @@ class Scraper:
                                 "link": "https://www.avto.net" + href.replace("..", ""),
                                 "slika_url": None
                             })
-
-                if is_first:
-                    print(f"[{get_time()}] 📥 Prvi sken za {u_name}: Sinhroniziram {len(all_ids_on_page)} oglasov.")
-                    self.db.bulk_add_sent_ads(u_id, all_ids_on_page)
-                    self.db.log_scraper_run(u_id, 200, 0, round(time.time() - start_time, 2), bytes_used, "Initial Sync")
-                    continue
 
                 # --- AI PROCESIRANJE (Batching) ---
                 if ads_to_ai_batch:
