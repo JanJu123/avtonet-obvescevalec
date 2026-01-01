@@ -237,8 +237,8 @@ class Scraper:
                     content_id = str(match.group(1))
                     all_ids_on_page.append(content_id)
 
-                    # Če je oglas nov za tega uporabnika (ali je prvi sken)...
-                    if is_first or self.db.is_ad_new(content_id):
+                    # Če je oglas nov za kateregakoli uporabnika tega URL-ja (ali je prvi sken)...
+                    if is_first or self.db.is_ad_new_for_url(content_id, u_id):
                         
                         # --- NOVO: PREVERIMO ARHIV (MarketData) ---
                         # Če je nekdo drug ta avto že ulovil, ne trošimo AI-ja!
@@ -246,9 +246,12 @@ class Scraper:
                         
                         if existing_ad:
                             # [REUSE] - Ad exists in MarketData, skip AI but add to final_results
-                            # (user should see it on first scan, but not on subsequent scans)
+                            # This means: "New ad for at least one user, but already cached"
                             if is_first:
                                 # On first scan, add to results so user gets them
+                                final_results.append(existing_ad)
+                            else:
+                                # On subsequent scans, add to results only if new to at least one user
                                 final_results.append(existing_ad)
                             print(f"{B_GREEN}[{get_time()}] ♻️ [REUSE] Oglas {content_id} najden v arhivu. Preskakujem AI.{B_END}")
                         else:

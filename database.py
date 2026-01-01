@@ -1212,10 +1212,46 @@ class Database:
             conn.close()
 
     
-    def is_ad_new(self, content_id):
+    def is_ad_new_for_url(self, content_id, url_id):
+        """
+        Preveri, če je oglas nov za kateregakoli uporabnika, ki spremlja ta URL.
+        Vrne TRUE če vsaj en uporabnik tega URL-ja še ni videl tega oglasa.
+        """
         conn = self.get_connection()
-        # Preverimo, če oglas že obstaja v tabeli SentAds (zgodovina vseh poslanih)
-        res = conn.execute("SELECT 1 FROM SentAds WHERE content_id = ? LIMIT 1", (content_id,)).fetchone()
+        # Pridobi vse uporabnike, ki sledijo temu URL-ju
+        users = conn.execute("SELECT telegram_id FROM Tracking WHERE url_id = ?", (url_id,)).fetchall()
+        
+        if not users:
+            conn.close()
+            return True  # Če ni uporabnikov, obravnavamo kot nov
+        
+        # Preveri, če vsaj en uporabnik še ni videl tega oglasa
+        for user_row in users:
+            user_id = user_row[0]
+            seen = conn.execute("SELECT 1 FROM SentAds WHERE content_id = ? AND telegram_id = ? LIMIT 1", 
+                               (content_id, user_id)).fetchone()
+            if seen is None:
+                # Ta uporabnik še ni videl tega oglasa
+                conn.close()
+                return True
+        
+        # Vsi uporabniki so že videli ta oglas
+        conn.close()
+        return False
+    
+    def is_ad_new(self, content_id, telegram_id=None):
+        """
+        Preveri, če je oglas nov.
+        Če je telegram_id podan, preveri samo za tega uporabnika.
+        Če ni podan, preveri globalno (za kateregakoli uporabnika).
+        """
+        conn = self.get_connection()
+        if telegram_id:
+            # Preveri za specifičnega uporabnika
+            res = conn.execute("SELECT 1 FROM SentAds WHERE content_id = ? AND telegram_id = ? LIMIT 1", (content_id, telegram_id)).fetchone()
+        else:
+            # Globalna preverba (katerikoli uporabnik)
+            res = conn.execute("SELECT 1 FROM SentAds WHERE content_id = ? LIMIT 1", (content_id,)).fetchone()
         conn.close()
         return res is None
     
