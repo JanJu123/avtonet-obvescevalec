@@ -286,13 +286,16 @@ class Scraper:
                         ai_results = self.ai.extract_ads_batch(ads_to_ai_batch)
                         
                         if ai_results:
+                            print(f"[DEBUG] AI returned {len(ai_results)} results")
                             # Process AI results and add to final_results
                             for ai_data in ai_results:
                                 content_id = str(ai_data.get('content_id') or ai_data.get('id'))
+                                print(f"[DEBUG] Processing AI result for content_id: {content_id}")
                                 # Find the original ad data
                                 orig = next((x for x in ads_to_ai_batch if str(x['id']) == content_id), None)
                                 
                                 if orig:
+                                    print(f"[DEBUG] Found matching orig for {content_id}")
                                     ai_data['content_id'] = content_id
                                     ai_data['link'] = orig['link']
                                     row_soup = orig.get('row_soup')
@@ -308,8 +311,12 @@ class Scraper:
                                     # Save to MarketData with enriched=0
                                     try:
                                         self.db.insert_market_data(ai_data, orig.get('text'))
+                                        print(f"[DEBUG] Inserted {content_id} into MarketData")
                                     except Exception as e:
                                         print(f"[DB ERROR] insert_market_data: {e}")
+                                else:
+                                    print(f"[DEBUG] ❌ SKIPPED: No matching orig found for AI result {content_id}")
+                                    print(f"[DEBUG] Available IDs in ads_to_ai_batch: {[str(x['id']) for x in ads_to_ai_batch]}")
                         else:
                             print(f"{B_RED}[{get_time()}] AI vrnil prazen rezultat.{B_END}")
                     except Exception as e:
