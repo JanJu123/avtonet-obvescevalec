@@ -228,8 +228,10 @@ class Database:
                 data.get('slika_url')
             ))
             conn.commit()
+            print(f"[DEBUG] insert_scraped_data: OK for content_id {data.get('content_id')}")
         except Exception as e:
-            print(f"[DB ERROR] Napaka pri vstavljanju v ScrapedData: {e}")
+            print(f"[DB ERROR] Napaka pri vstavljanju v ScrapedData za {data.get('content_id')}: {e}")
+            print(f"[DB ERROR] Data keys: {list(data.keys()) if isinstance(data, dict) else 'NOT A DICT'}")
         finally:
             conn.close()
 
