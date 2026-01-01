@@ -245,12 +245,9 @@ class Scraper:
                         existing_ad = self.db.get_market_data_by_id(content_id)
                         
                         if existing_ad:
+                            # [REUSE] - Ad exists in MarketData, skip AI but DON'T add to final_results
+                            # (we don't want to send it to user again)
                             print(f"{B_GREEN}[{get_time()}] ♻️ [REUSE] Oglas {content_id} najden v arhivu. Preskakujem AI.{B_END}")
-                            # Pripravimo sliko in link iz trenutnega row-a (da sta vedno sveža)
-                            img_tag = row.find('img')
-                            existing_ad['slika_url'] = img_tag.get('data-src') or img_tag.get('src') if img_tag else None
-                            existing_ad['link'] = "https://www.avto.net" + href.replace("..", "")
-                            final_results.append(existing_ad)
                         else:
                             # Popolnoma nov oglas, ki gre v AI batch
                             ads_to_ai_batch.append({

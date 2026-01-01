@@ -44,7 +44,11 @@ class DataManager():
         ime = html.escape(str(oglas.get('ime_avta', 'Neznano')))
         
         # Cena (če manjka €, ga dodaj)
-        cena = oglas.get('cena', 'Po dogovoru').replace('\xa0', ' ').strip()
+        cena = oglas.get('cena', 'Po dogovoru')
+        if cena and isinstance(cena, str):
+            cena = cena.replace('\xa0', ' ').strip()
+        else:
+            cena = 'Po dogovoru'
         if any(char.isdigit() for char in cena) and '€' not in cena:
             cena += " €"
             
