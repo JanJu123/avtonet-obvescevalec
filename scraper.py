@@ -199,7 +199,14 @@ class Scraper:
                 else:
                     final_url = entry['url']
 
-                print(f"{B_CYAN}[{get_time()}] 🔍 Skeniram URL ID {u_id} (Uporabnik: {u_name})...{B_END}")
+                # Get all users tracking this URL for better logging
+                all_users = self.db.get_connection().execute(
+                    "SELECT u.telegram_name FROM Tracking t JOIN Users u ON t.telegram_id = u.telegram_id WHERE t.url_id = ?", 
+                    (u_id,)
+                ).fetchall()
+                user_names = ", ".join([row[0] for row in all_users]) if all_users else u_name
+                
+                print(f"{B_CYAN}[{get_time()}] 🔍 Skeniram URL ID {u_id} (Uporabniki: {user_names})...{B_END}")
                 
                 html, bytes_used, status_code = self.get_latest_offers(final_url)
                 
