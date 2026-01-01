@@ -14,9 +14,12 @@ from config import OPENROUTER_API_KEYS, AI_MODEL
 
 class AIHandler:
     def __init__(self):
+        # Če je OPENROUTER_API_KEYS seznam, vzamemo prvi ključ; sicer ga uporabimo direktno
+        api_key = OPENROUTER_API_KEYS[0] if isinstance(OPENROUTER_API_KEYS, list) else OPENROUTER_API_KEYS
+        
         self.client = OpenAI(
             base_url="https://openrouter.ai/api/v1",
-            api_key=OPENROUTER_API_KEYS,
+            api_key=api_key,
         )
         self.model = AI_MODEL
         self.call_count_today = 0 # Varnostna varovalka
@@ -59,6 +62,8 @@ class AIHandler:
 
         try:
             # Klic na OpenRouter (Plačljiv model, zato nima limitov)
+            print(f"[AI DEBUG] Pošiljam {len(raw_snippets)} oglasov na AI ({self.model})...")
+            
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
@@ -66,25 +71,37 @@ class AIHandler:
                     {"role": "user", "content": instructions + "\n\nPODATKI ZA OBDELAVO:\n" + combined_text}
                 ],
                 response_format={"type": "json_object"},
-                timeout=15,
+                timeout=30,
             )
 
             self.call_count_today += 1
             content = response.choices[0].message.content
+            print(f"[AI DEBUG] Prejet odgovor: {content[:200]}...")
+            
             data = json.loads(content)
+            print(f"[AI DEBUG] JSON parsiran OK. Tip: {type(data)}")
             
             # Normalizacija odgovora (da vedno dobimo seznam)
             if isinstance(data, dict):
                 # Če AI zapakira seznam v ključ (npr. "ads": [...])
                 for key in data:
                     if isinstance(data[key], list):
+                        print(f"[AI DEBUG] Najden seznam pod ključem '{key}', dolžina: {len(data[key])}")
                         return data[key]
+                print(f"[AI DEBUG] Dict brez seznama — vračam kot seznam z 1 elementom")
                 return [data]
+            print(f"[AI DEBUG] Dobljen seznam, dolžina: {len(data)}")
             return data
 
+        except json.JSONDecodeError as je:
+            print(f"[AI ERROR] JSON parse napaka: {je}")
+            print(f"[AI DEBUG] Raw content: {content if 'content' in locals() else 'N/A'}")
+            return None
         except Exception as e:
             print(f"[AI ERROR] Napaka pri API pozivu: {e}")
-            print(f"[AI DEBUG] Broj oglasa za obrada: {len(raw_snippets)}")
+            print(f"[AI DEBUG] Exception type: {type(e).__name__}")
+            import traceback
+            traceback.print_exc()
             return None
 
 
