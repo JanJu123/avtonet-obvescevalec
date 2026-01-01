@@ -245,14 +245,9 @@ class Scraper:
                         existing_ad = self.db.get_market_data_by_id(content_id)
                         
                         if existing_ad:
-                            # [REUSE] - Ad exists in MarketData, skip AI but add to final_results
-                            # This means: "New ad for at least one user, but already cached"
-                            if is_first:
-                                # On first scan, add to results so user gets them
-                                final_results.append(existing_ad)
-                            else:
-                                # On subsequent scans, add to results only if new to at least one user
-                                final_results.append(existing_ad)
+                            # [REUSE] - Ad exists in MarketData, skip AI and reuse cached data
+                            # Add to final_results so it gets sent to users who haven't seen it
+                            final_results.append(existing_ad)
                             print(f"{B_GREEN}[{get_time()}] ♻️ [REUSE] Oglas {content_id} najden v arhivu. Preskakujem AI.{B_END}")
                         else:
                             # Popolnoma nov oglas, ki gre v AI batch
