@@ -248,7 +248,9 @@ class Scraper:
                             # [REUSE] - Ad exists in MarketData, skip AI and reuse cached data
                             # Add to final_results so it gets sent to users who haven't seen it
                             final_results.append(existing_ad)
-                            print(f"{B_GREEN}[{get_time()}] ♻️ [REUSE] Oglas {content_id} najden v arhivu. Preskakujem AI.{B_END}")
+                            # Only log REUSE on non-first scans (first scan is expected to use cache)
+                            if not is_first:
+                                print(f"{B_GREEN}[{get_time()}] ♻️ [REUSE] Oglas {content_id} najden v arhivu. Preskakujem AI.{B_END}")
                         else:
                             # Popolnoma nov oglas, ki gre v AI batch
                             ads_to_ai_batch.append({
