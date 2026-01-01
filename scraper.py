@@ -246,27 +246,28 @@ class Scraper:
                     content_id = str(match.group(1))
                     all_ids_on_page.append(content_id)
 
-                    # Če je oglas nov za tega uporabnika...
-                    if not is_first and self.db.is_ad_new(content_id):
-                        
-                        # --- NOVO: PREVERIMO ARHIV (MarketData) ---
-                        # Če je nekdo drug ta avto že ulovil, ne trošimo AI-ja!
+                    # NOVA LOGIKA: Vsi oglasi gredo v ScrapedData (unfiltered)
+                    # Potem check_new_offers() filtrira po MarketData
+                    if not is_first:
+                        # Preverimo MarketData za AI reuse
                         existing_ad = self.db.get_market_data_by_id(content_id)
                         
                         if existing_ad:
-                            print(f"{B_GREEN}[{get_time()}] [REUSE] Oglas {content_id} najden v arhivu. Preskakujem AI.{B_END}")
-                            # VAŽNO: [REUSE] oglase NE dodavamo u final_results jer su već poslani!
-                            # Samo ih označimo kao obrađene u SentAds
-                            self.db.mark_as_sent(u_id, content_id)
+                            # [REUSE] iz MarketData - takoj dodamo v final_results brez AI
+                            print(f"{B_GREEN}[{get_time()}] [REUSE] Oglas {content_id} najden v arhivu.{B_END}")
+                            ad_data = dict(existing_ad)  # Convert Row to dict
+                            ad_data['content_id'] = content_id
+                            ad_data['link'] = "https://www.avto.net" + href.replace("..", "")
+                            img_tag = row.find('img')
+                            ad_data['slika_url'] = img_tag.get('data-src') or img_tag.get('src') if img_tag else None
+                            final_results.append(ad_data)
                         else:
-                            # Popolnoma nov oglas: sledimo pravilu "first finder owns AI"
-                            # Vstavimo idempotentno placeholder v MarketData in poskusimo prevzeti processing lock.
+                            # Nov oglas - potrebuje AI
                             try:
                                 self.db.insert_market_placeholder(content_id, "https://www.avto.net" + href.replace("..", ""), self._clean_row_for_ai(row))
                             except Exception:
                                 pass
 
-                            # Če uspemo nastaviti processing=1, potem ta worker obdeluje AI
                             try:
                                 acquired = self.db.mark_market_processing(content_id)
                             except Exception:
@@ -281,8 +282,7 @@ class Scraper:
                                     "slika_url": None
                                 })
                             else:
-                                # Nekdo drug bo obdelal ta oglas (master ali drug worker). Preskočimo AI tukaj.
-                                print(f"{B_YELLOW}[{get_time()}] Oglas {content_id} že v obdelavi drugje. Preskakujem AI.{B_END}")
+                                print(f"{B_YELLOW}[{get_time()}] Oglas {content_id} že v obdelavi drugje.{B_END}")
 
                 if is_first:
                     print(f"[{get_time()}] Prvi sken za {u_name}: Sinhroniziram {len(all_ids_on_page)} oglasov.")

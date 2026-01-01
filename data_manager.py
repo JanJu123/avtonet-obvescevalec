@@ -36,13 +36,24 @@ class DataManager():
                 WHERE sa.telegram_id = t.telegram_id 
                 AND sa.content_id = sd.content_id
             )
+            AND EXISTS (
+                SELECT 1 FROM MarketData md
+                WHERE md.content_id = sd.content_id
+            )
             AND (
                 t.last_notified_at IS NULL
                 OR ( (strftime('%s','now','localtime') - strftime('%s', t.last_notified_at)) / 60.0 ) >= (us.scan_interval - 0.1)
             )
         """
 
-        rows = c.execute(query, filter_url_ids).fetchall()
+        try:
+            rows = c.execute(query, filter_url_ids).fetchall()
+        except Exception as e:
+            print(f"[DEBUG] SQL Error in check_new_offers: {e}")
+            print(f"[DEBUG] Query: {query}")
+            print(f"[DEBUG] Filter IDs: {filter_url_ids}")
+            rows = []
+        
         conn.close()
         
         return [dict(row) for row in rows]
