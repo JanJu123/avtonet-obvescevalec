@@ -10,7 +10,7 @@ class AIHandler:
     def __init__(self):
         self.client = OpenAI(
             base_url="https://openrouter.ai/api/v1",
-            api_key=OPENROUTER_API_KEYS[0],  # Use first key from list
+            api_key=OPENROUTER_API_KEYS[0],
         )
         self.model = AI_MODEL
         self.call_count_today = 0 # Varnostna varovalka
