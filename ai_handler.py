@@ -3,17 +3,14 @@ import time
 from openai import OpenAI
 
 # Poskusi uvoziti ključ, če ne gre, uporabi ročni vnos za test
-try:
-    from config import OPENROUTER_API_KEY, AI_MODEL
-except ImportError:
-    OPENROUTER_API_KEY = "sk-or-v1-..." # Tvoj ključ tukaj, če ne uporabljaš config.py
-    AI_MODEL = "google/gemini-flash-1.5-8b"
+from config import OPENROUTER_API_KEYS, AI_MODEL
+
 
 class AIHandler:
     def __init__(self):
         self.client = OpenAI(
             base_url="https://openrouter.ai/api/v1",
-            api_key=OPENROUTER_API_KEY,
+            api_key=OPENROUTER_API_KEYS[0],  # Use first key from list
         )
         self.model = AI_MODEL
         self.call_count_today = 0 # Varnostna varovalka
