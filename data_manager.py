@@ -23,7 +23,7 @@ class DataManager():
         
         # Poiščemo oglase, ki so v ScrapedData, a jih uporabnik še nima v SentAds
         # Hkrati upoštevamo last_notified_at in user's scan_interval: pošljemo le, če
-        # last_notified_at is NULL ali je min za zadnje obvestilo >= scan_interval
+        # last_notified_at is NULL ali je čas od zadnjega obvestila >= scan_interval
         query = f"""
             SELECT sd.*, t.telegram_id as target_user_id, t.last_notified_at, us.scan_interval
             FROM ScrapedData sd
@@ -38,7 +38,7 @@ class DataManager():
             )
             AND (
                 t.last_notified_at IS NULL
-                OR ( (strftime('%s','now') - strftime('%s', t.last_notified_at)) / 60.0 ) >= (us.scan_interval - 0.1)
+                OR ( (strftime('%s','now','localtime') - strftime('%s', t.last_notified_at)) / 60.0 ) >= (us.scan_interval - 0.1)
             )
         """
 

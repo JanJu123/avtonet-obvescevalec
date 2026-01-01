@@ -143,10 +143,10 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
                 try:
                     conn_upd = db.get_connection()
                     cur_upd = conn_upd.cursor()
-                    now_slo = datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+                    # Use proper SQLite datetime format (ISO 8601)
                     cur_upd.execute(
-                        "UPDATE Tracking SET last_notified_at = ? WHERE telegram_id = ? AND url_id = ?",
-                        (now_slo, chat_id, oglas.get('url_id'))
+                        "UPDATE Tracking SET last_notified_at = datetime('now', 'localtime') WHERE telegram_id = ? AND url_id = ?",
+                        (chat_id, oglas.get('url_id'))
                     )
                     conn_upd.commit()
                     conn_upd.close()
