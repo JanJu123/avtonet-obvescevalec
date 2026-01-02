@@ -99,7 +99,7 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     novi_oglasi = manager.check_new_offers(filter_url_ids=pending_ids)
     
     if not novi_oglasi:
-        print(f"{B_BLUE}[{get_time()}] ℹ️ Ni novih oglasov za te skene.{B_END}")
+        print(f"{B_BLUE}[{get_time()}] INFO - Ni novih oglasov za te skene.{B_END}")
         return
 
     print(f"{B_YELLOW}[{get_time()}] SEND - Pošiljam {len(novi_oglasi)} novih obvestil...{B_END}")
