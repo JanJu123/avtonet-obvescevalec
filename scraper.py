@@ -44,7 +44,7 @@ class Scraper:
                     wire_size = decompressed_size
                     savings = 0.0
                 
-                print(f"✅ Dostop OK! [Ocenjen promet: {round(wire_size/1024, 1)} KB | Encoding: {encoding}]")
+                print(f"   [OK] Dostop OK! [Ocenjen promet: {round(wire_size/1024, 1)} KB | Encoding: {encoding}]")
                 return response.text, wire_size, 200
             else:
                 # Vrnemo status kodo (403, 404, 500...), da vemo kaj je narobe
@@ -258,7 +258,7 @@ class Scraper:
                 else:
                     final_url = entry['url']
 
-                print(f"{B_CYAN}[{get_time()}] 🔍 Skeniram URL ID {u_id} (Uporabnik: {u_name})...{B_END}")
+                print(f"{B_CYAN}[{get_time()}] SCAN - URL ID {u_id} (Uporabnik: {u_name})...{B_END}")
                 
                 html, bytes_used, status_code = self.get_latest_offers(final_url)
                 
@@ -336,7 +336,7 @@ class Scraper:
                         ads_to_ai_batch = ads_to_ai_batch[:5]
 
                     if config.USE_AI:
-                        print(f"{B_YELLOW}[{get_time()}] 🤖 AI obdeluje {len(ads_to_ai_batch)} oglasov za {u_name}...{B_END}")
+                        print(f"{B_YELLOW}[{get_time()}] AI - Obdelujam {len(ads_to_ai_batch)} oglasov za {u_name}...{B_END}")
                         ai_results = self.ai.extract_ads_batch(ads_to_ai_batch)
                         
                         if ai_results:
@@ -380,7 +380,7 @@ class Scraper:
                 duration = round(time.time() - start_time, 2)
                 self.db.log_scraper_run(u_id, 200, len(final_results), duration, bytes_used, "Success")
                 if final_results:
-                    print(f"✅ [{get_time()}] URL {u_id} končan ({len(final_results)} oglasov) v {duration}s.")
+                    print(f"   [DONE] URL {u_id} - {len(final_results)} oglasov v {duration}s")
 
             except Exception as e:
                 print(f"{B_RED}[{get_time()}] ❌ Kritična napaka pri URL {u_id}: {e}{B_END}")
