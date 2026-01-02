@@ -131,6 +131,8 @@ class Database:
             motor TEXT,
             link TEXT,
             raw_snippet TEXT,              -- Shranimo tisto, kar je AI dejansko bral (za debug)
+            enriched INTEGER DEFAULT 0,    -- 0 = not enriched, 1 = enriched by local pipeline
+            enriched_json TEXT,            -- JSON blob of enrichment payload
             created_at DATETIME DEFAULT (strftime('%d.%m.%Y %H:%M:%S', 'now', 'localtime'))
         )
         """)
@@ -1329,8 +1331,9 @@ class Database:
             c.execute("""
                 INSERT OR IGNORE INTO MarketData (
                     content_id, ime_avta, cena, leto_1_reg, 
-                    prevozenih, gorivo, menjalnik, motor, link, raw_snippet
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    prevozenih, gorivo, menjalnik, motor, link, raw_snippet,
+                    enriched, enriched_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 str(data.get('content_id')),
                 data.get('ime_avta'),
@@ -1341,13 +1344,42 @@ class Database:
                 data.get('menjalnik'),
                 data.get('motor'),
                 data.get('link'),
-                raw_snippet
+                raw_snippet,
+                0,
+                None
             ))
             conn.commit()
         except Exception as e:
             print(f"❌ [DB ERROR] MarketData insert: {e}")
         finally:
             conn.close()
+
+    def mark_enriched(self, content_id, enriched_json):
+        """Označi oglas kot obdelan (enriched=1) in shrani JSON rezultat."""
+        conn = self.get_connection()
+        c = conn.cursor()
+        try:
+            c.execute(
+                "UPDATE MarketData SET enriched = 1, enriched_json = ? WHERE content_id = ?",
+                (enriched_json, str(content_id)),
+            )
+            conn.commit()
+        except Exception as e:
+            print(f"❌ [DB ERROR] MarketData mark_enriched: {e}")
+        finally:
+            conn.close()
+
+    def fetch_unenriched(self, limit=50, offset=0):
+        """Vrne najstarejše neobdelane zapise za obogatitev."""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        rows = c.execute(
+            "SELECT * FROM MarketData WHERE enriched = 0 ORDER BY created_at ASC LIMIT ? OFFSET ?",
+            (limit, offset),
+        ).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
 
 if __name__ == "__main__":
     db = Database(db_name="test_bot.db")
