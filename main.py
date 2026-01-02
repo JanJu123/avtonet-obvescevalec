@@ -5,6 +5,7 @@ from database import Database
 from scraper import Scraper
 from data_manager import DataManager
 from telegram.ext import CallbackQueryHandler
+from master_crawler import run_master_crawler_once
 
 from telegram_bot import start_command, list_command, add_url_command, remove_url_command, info_command, activate_user, \
     deactivate_user, admin_stats_command, admin_help_command, broadcast_command, list_users_admin, admin_logs_command, \
@@ -44,7 +45,15 @@ B_END = "\033[0m"
 
 
 # --- KONSTANTE --- #
-from config import SUBSCRIPTION_PACKAGES, TOKEN, DB_PATH, ADMIN_ID, PROXY_PRICE_GB
+from config import (
+    SUBSCRIPTION_PACKAGES,
+    TOKEN,
+    DB_PATH,
+    ADMIN_ID,
+    PROXY_PRICE_GB,
+    ENABLE_MASTER_CRAWLER,
+    MASTER_CRAWL_INTERVAL,
+)
 
 async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     def get_time():
@@ -250,6 +259,13 @@ def main():
     # --- NASTAVITEV PERIODIČNEGA OPRAVILA ---
     # Preverjaj vsakih 300 sekund (5 minut), začni čez 10 sekund
     application.job_queue.run_repeating(check_for_new_ads, interval=120, first=10)
+
+    # Master crawler (MarketData-only cache warmer)
+    if ENABLE_MASTER_CRAWLER:
+        async def master_job(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+            await asyncio.to_thread(run_master_crawler_once)
+
+        application.job_queue.run_repeating(master_job, interval=MASTER_CRAWL_INTERVAL, first=15)
 
     # Čiščenje baze enkrat na dan (npr. vsakih 86400 sekund)
     # Nastavimo čas, ko običajno ni veliko novih oglasov
