@@ -65,7 +65,7 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     pending_urls = db.get_pending_urls()
     
     if not pending_urls:
-        print(f"{B_BLUE}[{get_time()}] 💤 Mirovanje: Noben URL še ni na vrsti.{B_END}")
+        print(f"{B_BLUE}[{get_time()}] IDLE - Noben URL še ni na vrsti.{B_END}")
         return
 
     pending_ids = [u['url_id'] for u in pending_urls]
