@@ -1,16 +1,21 @@
 import re
 import time
+from datetime import datetime
 from bs4 import BeautifulSoup
 
 import config
 from ai_handler import AIHandler
 from database import Database
 from scraper import Scraper
-from utils import get_time
 
-# Magenta for master logs (distinct but calm)
+# Magenta for master logs
 M_CLR = "\033[35m"
 M_END = "\033[0m"
+
+
+def get_time():
+    """Return current time in HH:MM:SS format."""
+    return datetime.now().strftime("%H:%M:%S")
 
 
 class MasterCrawler:
