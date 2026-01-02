@@ -7,8 +7,8 @@ from ai_handler import AIHandler
 from database import Database
 from scraper import Scraper
 
-# Light orange for master logs (distinct from other flows)
-M_CLR = "\033[38;5;208m"
+# Magenta for master logs (distinct but calm)
+M_CLR = "\033[35m"
 M_END = "\033[0m"
 
 
