@@ -111,6 +111,7 @@ class MasterCrawler:
         processed_ids = set()
         if config.USE_AI:
             for batch in self._chunk(items, config.MASTER_AI_BATCH_SIZE):
+                print(f"[MASTER] AI processing {len(batch)} ads...")
                 ai_results = self.ai.extract_ads_batch(batch)
                 if not ai_results:
                     continue
