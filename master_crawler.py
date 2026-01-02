@@ -7,6 +7,10 @@ from ai_handler import AIHandler
 from database import Database
 from scraper import Scraper
 
+# Light orange for master logs (distinct from other flows)
+M_CLR = "\033[38;5;208m"
+M_END = "\033[0m"
+
 
 class MasterCrawler:
     """Caches ads into MarketData only (no ScrapedData/SentAds, no Telegram sends)."""
@@ -23,16 +27,16 @@ class MasterCrawler:
             return
 
         total_new = 0
-        print(f"[MASTER] Start crawl: {len(target_urls)} URL(s), max pages {config.MASTER_MAX_PAGES}.")
+        print(f"{M_CLR}[MASTER] Start crawl: {len(target_urls)} URL(s), max pages {config.MASTER_MAX_PAGES}.{M_END}")
 
         for url in target_urls:
             try:
                 total_new += self._crawl_single(url)
             except Exception as exc:
-                print(f"[MASTER] Error on URL: {exc}")
+                print(f"{M_CLR}[MASTER] Error on URL: {exc}{M_END}")
                 continue
 
-        print(f"[MASTER] Done. New ads cached this run: {total_new}.")
+            print(f"{M_CLR}[MASTER] Done. New ads cached this run: {total_new}.{M_END}")
 
     def _crawl_single(self, base_url: str) -> int:
         current_page = 1
@@ -43,7 +47,7 @@ class MasterCrawler:
             page_url = self._with_page(base_url, current_page)
             html, _, status_code = self.scraper.get_latest_offers(page_url)
             if not html:
-                print(f"[MASTER] Fetch failed (HTTP {status_code}) for page {current_page}.")
+                print(f"{M_CLR}[MASTER] Fetch failed (HTTP {status_code}) for page {current_page}.{M_END}")
                 break
 
             soup = BeautifulSoup(html, 'html.parser')
@@ -99,11 +103,11 @@ class MasterCrawler:
             current_page += 1
 
         if not all_candidates:
-            print("[MASTER] Nothing new for MarketData on this URL.")
+            print(f"{M_CLR}[MASTER] Nothing new for MarketData on this URL.{M_END}")
             return 0
 
         inserted = self._process_candidates(all_candidates)
-        print(f"[MASTER] URL done: pages={current_page-1 if not all_new_on_page else current_page}, new_ads={inserted}.")
+        print(f"{M_CLR}[MASTER] URL done: pages={current_page-1 if not all_new_on_page else current_page}, new_ads={inserted}.{M_END}")
         return inserted
 
     def _process_candidates(self, items):
@@ -111,7 +115,7 @@ class MasterCrawler:
         processed_ids = set()
         if config.USE_AI:
             for batch in self._chunk(items, config.MASTER_AI_BATCH_SIZE):
-                print(f"[MASTER] AI processing {len(batch)} ads...")
+                print(f"{M_CLR}[MASTER] AI processing {len(batch)} ads...{M_END}")
                 ai_results = self.ai.extract_ads_batch(batch)
                 if not ai_results:
                     continue
