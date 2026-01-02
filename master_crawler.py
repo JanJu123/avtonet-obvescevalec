@@ -117,7 +117,9 @@ class MasterCrawler:
             for batch in self._chunk(items, config.MASTER_AI_BATCH_SIZE):
                 print(f"{M_CLR}[MASTER] AI processing {len(batch)} ads...{M_END}")
                 ai_results = self.ai.extract_ads_batch(batch)
+                print(f"{M_CLR}[MASTER] AI returned: {ai_results}{M_END}")  # DEBUG
                 if not ai_results:
+                    print(f"{M_CLR}[MASTER] AI returned nothing, falling back to manual parse{M_END}")
                     continue
 
                 for ad_data in ai_results:

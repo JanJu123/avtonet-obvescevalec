@@ -74,22 +74,81 @@ class Scraper:
         return False
 
     def _manual_parse_row(self, row, content_id, link, img_url):
-        """Fallback: Ročno branje osnovnih podatkov, če AI ni na voljo."""
+        """Fallback: Parse HTML + raw_snippet text to extract fields."""
+        import re
+        
         naziv_tag = row.find('div', class_='GO-Results-Naziv')
         price_tag = row.find('div', class_=re.compile(r'Price|Cena'))
+        
+        # Get text from row as fallback
+        row_text = row.get_text(separator=' ', strip=True)
+        
+        # Try to extract from text using regex patterns
+        cena = self._extract_price_from_text(row_text)
+        leto = self._extract_year_from_text(row_text)
+        km = self._extract_mileage_from_text(row_text)
+        gorivo = self._extract_fuel_from_text(row_text)
+        menjalnik = self._extract_transmission_from_text(row_text)
+        motor = self._extract_engine_from_text(row_text)
         
         return {
             "content_id": content_id,
             "ime_avta": naziv_tag.get_text(strip=True) if naziv_tag else "Neznano",
-            "cena": price_tag.get_text(strip=True) if price_tag else "Po dogovoru",
-            "leto_1_reg": "Neznano (AI OFF)",
-            "prevozenih": "Neznano (AI OFF)",
-            "gorivo": "Neznano (AI OFF)",
-            "menjalnik": "Neznano (AI OFF)",
-            "motor": "Neznano (AI OFF)",
+            "cena": cena or (price_tag.get_text(strip=True) if price_tag else "Po dogovoru"),
+            "leto_1_reg": leto or "Neznano",
+            "prevozenih": km or "Neznano",
+            "gorivo": gorivo or "Neznano",
+            "menjalnik": menjalnik or "Neznano",
+            "motor": motor or "Neznano",
             "link": link,
             "slika_url": img_url
         }
+    
+    def _extract_price_from_text(self, text):
+        """Extract price from text like '12.490 €' or '12490EUR'"""
+        match = re.search(r'(\d+[.,]\d+)\s*[€EUR]', text, re.IGNORECASE)
+        return match.group(1) + " €" if match else None
+    
+    def _extract_year_from_text(self, text):
+        """Extract year like '2021' or '2020'"""
+        match = re.search(r'\b(19|20)\d{2}\b', text)
+        return match.group(0) if match else None
+    
+    def _extract_mileage_from_text(self, text):
+        """Extract mileage like '71000 km' or '71.000km'"""
+        match = re.search(r'(\d+[.,]?\d*)\s*km', text, re.IGNORECASE)
+        return match.group(0) if match else None
+    
+    def _extract_fuel_from_text(self, text):
+        """Extract fuel type"""
+        text_lower = text.lower()
+        fuels = {
+            'diesel': ['diesel'],
+            'bencin': ['bencin', 'benzin', 'gasoline'],
+            'hibrid': ['hibrid', 'hybrid'],
+            'elektro': ['elektro', 'electric', 'ev'],
+            'plin': ['plin', 'lpg', 'cng']
+        }
+        for fuel_type, keywords in fuels.items():
+            if any(kw in text_lower for kw in keywords):
+                return fuel_type
+        return None
+    
+    def _extract_transmission_from_text(self, text):
+        """Extract transmission type"""
+        text_lower = text.lower()
+        if 'avtomatski' in text_lower or 'automatic' in text_lower:
+            return 'avtomatski'
+        elif 'ročni' in text_lower or 'manual' in text_lower:
+            return 'ročni'
+        return None
+    
+    def _extract_engine_from_text(self, text):
+        """Extract engine cc and power like '1968 ccm, 110 kW / 150 KM'"""
+        match = re.search(r'(\d+)\s*ccm[^0-9]*(\d+)\s*kW\s*[/\\]\s*(\d+)\s*KM', text, re.IGNORECASE)
+        if match:
+            return f"{match.group(1)} ccm, {match.group(2)} kW / {match.group(3)} KM"
+        return None
 
     def _clean_row_for_ai(self, row_soup):
         """Pobere ključne dele in jih strukturira za AI, da prepreči 'Neznano' rezultate."""
