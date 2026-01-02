@@ -69,7 +69,7 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
         return
 
     pending_ids = [u['url_id'] for u in pending_urls]
-    print(f"{B_GREEN}[{get_time()}] 🚀 Skeniram: {len(pending_ids)} URL-jev na vrsti.{B_END}")
+    print(f"{B_GREEN}[{get_time()}] START - {len(pending_ids)} URL-jev na vrsti{B_END}")
 
     scraper = Scraper(DataBase=db)
     manager = DataManager(db)
