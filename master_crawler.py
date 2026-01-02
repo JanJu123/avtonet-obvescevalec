@@ -6,6 +6,7 @@ import config
 from ai_handler import AIHandler
 from database import Database
 from scraper import Scraper
+from utils import get_time
 
 # Magenta for master logs (distinct but calm)
 M_CLR = "\033[35m"
@@ -27,7 +28,7 @@ class MasterCrawler:
             return
 
         total_new = 0
-        print(f"{M_CLR}[MASTER] Start crawl: {len(target_urls)} URL(s), max pages {config.MASTER_MAX_PAGES}.{M_END}")
+        print(f"{M_CLR}[{get_time()}] [MASTER] Start crawl: {len(target_urls)} URL(s), max pages {config.MASTER_MAX_PAGES}.{M_END}")
 
         for url in target_urls:
             try:
@@ -36,7 +37,7 @@ class MasterCrawler:
                 print(f"{M_CLR}[MASTER] Error on URL: {exc}{M_END}")
                 continue
 
-            print(f"{M_CLR}[MASTER] Done. New ads cached this run: {total_new}.{M_END}")
+            print(f"{M_CLR}[{get_time()}] [MASTER] Done. New ads cached this run: {total_new}.{M_END}")
 
     def _crawl_single(self, base_url: str) -> int:
         current_page = 1
@@ -103,11 +104,11 @@ class MasterCrawler:
             current_page += 1
 
         if not all_candidates:
-            print(f"{M_CLR}[MASTER] Nothing new for MarketData on this URL.{M_END}")
+            print(f"{M_CLR}[{get_time()}] [MASTER] Nothing new for MarketData on this URL.{M_END}")
             return 0
 
         inserted = self._process_candidates(all_candidates)
-        print(f"{M_CLR}[MASTER] URL done: pages={current_page-1 if not all_new_on_page else current_page}, new_ads={inserted}.{M_END}")
+        print(f"{M_CLR}[{get_time()}] [MASTER] URL done: pages={current_page-1 if not all_new_on_page else current_page}, new_ads={inserted}.{M_END}")
         return inserted
 
     def _process_candidates(self, items):
@@ -173,4 +174,4 @@ def run_master_crawler_once():
 if __name__ == "__main__":
     start = time.time()
     run_master_crawler_once()
-    print(f"[MASTER] Done in {round(time.time() - start, 2)}s")
+    print(f"[{get_time()}] [MASTER] Done in {round(time.time() - start, 2)}s")
