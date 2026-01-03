@@ -336,14 +336,14 @@ async def packages_command(update: telegram.Update, context: telegram.ext.Contex
             msg += (
                 f"{emoji} <b>{pkg['label']} ({code})</b>\n"
                 f"• Število URL-jev: <b>{pkg['urls']}</b>\n"
-                f"• Interval osveževanja: <b>{pkg['interval']}</b>\n"
+                f"• Hitrost osveževanja: <b>{pkg['interval']}</b>\n"
                 f"• Cena: <b>{pkg['price']}</b>\n\n"
             )
         else:
             msg += (
                 f"{emoji} <b>{pkg['label']} ({code})</b>\n"
                 f"• Število URL-jev: <code>{pkg['urls']}</code>\n"
-                f"• Interval osveževanja: <code>{pkg['interval']} min</code>\n"
+                f"• Hitrost osveževanja: <code>{pkg['interval']} min</code>\n"
                 f"• Cena: <b>{float(pkg['price']):.2f}€ / mesec</b>\n\n"
             )
     
