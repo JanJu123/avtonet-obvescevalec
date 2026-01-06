@@ -360,26 +360,44 @@ async def packages_command(update: telegram.Update, context: telegram.ext.Contex
 
 
 async def broadcast_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
-    from main import ADMIN_ID
+    from config import ADMIN_ID
     if str(update.effective_user.id) != str(ADMIN_ID): return
 
     if not context.args:
-        await update.message.reply_text("❌ Vpiši sporočilo: `/broadcast <tekst>`")
+        await update.message.reply_text("❌ Vpiši sporočilo: <code>/broadcast tekst</code>", parse_mode="HTML")
         return
 
-    sporočilo = "📢 **OBVESTILO ADMINA**\n\n" + " ".join(context.args)
+    # 1. Sestavimo sporočilo v HTML formatu
+    vsebina = " ".join(context.args)
+    sporočilo = (
+        "📢 <b>OBVESTILO SKRBNIKA</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"{vsebina}"
+    )
+    
+    # 2. Pridobimo ID-je
     vsi_id = db.get_all_chat_ids()
+    
+    # DEBUG izpis v konzolo VPS-ja, da boš videl, če sploh začne
+    print(f"📣 [BROADCAST] Začenjam pošiljanje {len(vsi_id)} uporabnikom...")
     
     poslano = 0
     for chat_id in vsi_id:
         try:
-            await context.bot.send_message(chat_id=chat_id, text=sporočilo, parse_mode="Markdown")
+            # UPORABIMO HTML! To bo preprečilo sesutje zaradi @JanJu_123
+            await context.bot.send_message(
+                chat_id=chat_id, 
+                text=sporočilo, 
+                parse_mode="HTML"
+            )
             poslano += 1
-            await asyncio.sleep(0.05) # Da ne blokiramo bota
-        except:
+            await asyncio.sleep(0.05) # Pavza, da nas Telegram ne blokira
+        except Exception as e:
+            # Če pride do napake pri enem uporabniku (npr. nas je blokiral), gremo dalje
+            print(f"❌ Napaka pri pošiljanju uporabniku {chat_id}: {e}")
             continue
 
-    await update.message.reply_text(f"✅ Sporočilo poslano {poslano} uporabnikom.")
+    await update.message.reply_text(f"✅ Sporočilo uspešno poslano <b>{poslano}</b> uporabnikom.", parse_mode="HTML")
 
 
 async def list_users_admin(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
