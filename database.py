@@ -619,6 +619,8 @@ class Database:
         # Preverimo obstoj
         existing = c.execute("SELECT 1 FROM Users WHERE telegram_id = ?", (telegram_id,)).fetchone()
         
+        status = False # Privzeto nastavimo, da uporabnik že obstaja
+
         if not existing:
             from datetime import datetime, timedelta
             expiry = (datetime.now() + timedelta(days=3)).strftime("%d.%m.%Y %H:%M:%S")
@@ -626,13 +628,17 @@ class Database:
                 INSERT INTO Users (telegram_id, telegram_name, telegram_username, subscription_type, max_urls, scan_interval, subscription_end, is_active)
                 VALUES (?, ?, ?, 'TRIAL', 1, 15, ?, 1)
             """, (telegram_id, telegram_name, telegram_username, expiry))
+            status = True # Uporabnik je nov!
         else:
             # Obstoječemu vedno posodobimo ime in handle
             c.execute("UPDATE Users SET telegram_name = ?, telegram_username = ? WHERE telegram_id = ?", 
                     (telegram_name, telegram_username, telegram_id))
+            status = False # Uporabnik je že bil v bazi
         
         conn.commit()
         conn.close()
+        
+        return status
     
 
     def get_user_stats_24h(self, telegram_id):

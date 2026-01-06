@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram import BotCommand, BotCommandScopeDefault, BotCommandScopeChat
 
+import html
+
 import utils
 
 import psutil
@@ -23,31 +25,37 @@ db = Database(DB_PATH)
 
 
 async def start_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
-    from config import ADMIN_ID # Uvozimo admin ID
+    from config import ADMIN_ID
     user = update.effective_user
-    
-    # 1. Poskusimo registrirati uporabnika
+    if not user: return
+
+    # 1. Registracija v bazi
     is_new = db.register_user(user.id, user.first_name, user.username)
 
     if is_new:
-        # --- OBVESTILO ZA ADMINA (Tate) ---
+        # --- OBVESTILO ZA ADMINA ---
+        # Uporabimo html.escape, da ime kot npr. <Luka> ne zruši bota
+        safe_name = html.escape(user.first_name)
+        safe_username = html.escape(user.username) if user.username else "Nima"
+        
         admin_alert = (
             "🔔 <b>NOV UPORABNIK!</b>\n"
             "━━━━━━━━━━━━━━━━━━\n"
-            f"👤 Ime: <b>{user.first_name}</b>\n"
+            f"👤 Ime: <b>{safe_name}</b>\n"
             f"🆔 ID: <code>{user.id}</code>\n"
-            f"🏷 Username: @{user.username if user.username else 'Nima'}\n"
+            f"🏷 Username: @{safe_username}\n"
             "━━━━━━━━━━━━━━━━━━\n"
             "🚀 Sistem mu je avtomatsko podelil <b>TRIAL</b> paket."
         )
         try:
+            # KLJUČNO: ADMIN_ID spremenimo v int(), da Telegram ne vrne errorja
             await context.bot.send_message(chat_id=int(ADMIN_ID), text=admin_alert, parse_mode="HTML")
-        except:
-            pass # Če tebi ne more poslati, ne ustaviš bota za stranko
+        except Exception as e:
+            print(f"Napaka pri obveščanju admina: {e}")
 
         # Sporočilo za novega uporabnika
         msg = (
-            f"Pozdravljen, <b>{user.first_name}</b>! 👋\n\n"
+            f"Pozdravljen, <b>{safe_name}</b>! 👋\n\n"
             "Sem tvoj osebni Avto.net obveščevalec. Ker si nov, sem ti pravkar "
             "avtomatsko aktiviral <b>3-dnevni BREZPLAČNI PREIZKUS (TRIAL)</b>! 🎉\n\n"
             "<b>Tvoj paket vključuje:</b>\n"
@@ -58,8 +66,9 @@ async def start_command(update: telegram.Update, context: telegram.ext.ContextTy
         db.log_user_activity(user.id, "/start", "Nov uporabnik - Trial aktiviran")
     else:
         # Sporočilo za obstoječega uporabnika
+        safe_name = html.escape(user.first_name)
         msg = (
-            f"Pozdravljen nazaj, <b>{user.first_name}</b>! 👋\n\n"
+            f"Pozdravljen nazaj, <b>{safe_name}</b>! 👋\n\n"
             "Tvoj profil je že aktiven. Za pregled tvojih iskanj uporabi /list, "
             "za več informacij o paketu pa /info."
         )
