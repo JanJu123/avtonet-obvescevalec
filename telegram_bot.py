@@ -370,7 +370,7 @@ async def broadcast_command(update: telegram.Update, context: telegram.ext.Conte
     # 1. Sestavimo sporočilo v HTML formatu
     vsebina = " ".join(context.args)
     sporočilo = (
-        "📢 <b>OBVESTILO SKRBNIKA</b>\n"
+        "📢 <b>OBVESTILO ADMINA</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         f"{vsebina}"
     )
