@@ -12,3 +12,6 @@ config.py
 # Baza podatkov
 *.db
 *.log
+
+# Worker
+enrichment_worker/

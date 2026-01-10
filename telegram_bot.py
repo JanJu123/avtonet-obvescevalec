@@ -320,7 +320,7 @@ async def help_command(update: telegram.Update, context: telegram.ext.ContextTyp
 
 
 async def packages_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
-    """Prikaže prodajni meni s paketi. Deluje na ukaz in na gumb."""
+    """Prikaže prodajni meni s paketi. Vključen novi SOLO paket."""
     from config import SUBSCRIPTION_PACKAGES
     
     target_msg = update.effective_message
@@ -328,35 +328,39 @@ async def packages_command(update: telegram.Update, context: telegram.ext.Contex
     if not target_msg:
         return
     
-    msg = "<b>📦 RAZPOLOŽLJIVI PAKETI</b>\n\n"
+    msg = "<b>📦 RAZPOLOŽLJIVI PAKETI</b>\n"
+    msg += "━━━━━━━━━━━━━━━━━━\n\n"
     
     for code, pkg in SUBSCRIPTION_PACKAGES.items():
         if code == "CUSTOM": continue 
         
-        # Izbira emojija glede na paket
-        emoji = "🆓"
+        # Izbira emojija za vizualno hierarhijo
+        emoji = "🆓" # TRIAL
+        if code == "SOLO": emoji = "👤"   # Novo: Osebni paket
         if code == "BASIC": emoji = "🚗"
         if code == "PRO": emoji = "🔥"
         if code == "ULTRA": emoji = "⚡"
         if code == "VIP": emoji = "💎"
         
-        # Poseben izpis za VIP, ki nima fiksnih številk
-        if code == "VIP":
+        # Poseben izpis za VIP in TRIAL (brez decimalk pri ceni)
+        if code == "VIP" or code == "TRIAL":
+            price_display = "BREZPLAČNO" if code == "TRIAL" else pkg['price']
             msg += (
                 f"{emoji} <b>{pkg['label']} ({code})</b>\n"
-                f"• Število URL-jev: <b>{pkg['urls']}</b>\n"
-                f"• Hitrost osveževanja: <b>{pkg['interval']}</b>\n"
-                f"• Cena: <b>{pkg['price']}</b>\n\n"
+                f"• Št. URL-jev: <b>{pkg['urls']}</b>\n"
+                f"• Osveževanje: <b>{pkg['interval']}</b>\n"
+                f"• Cena: <b>{price_display}</b>\n\n"
             )
         else:
+            # Standardni paketi s formatirano ceno
             msg += (
                 f"{emoji} <b>{pkg['label']} ({code})</b>\n"
-                f"• Število URL-jev: <code>{pkg['urls']}</code>\n"
-                f"• Hitrost osveževanja: <code>{pkg['interval']} min</code>\n"
+                f"• Št. URL-jev: <code>{pkg['urls']}</code>\n"
+                f"• Osveževanje: <code>{pkg['interval']} min</code>\n"
                 f"• Cena: <b>{float(pkg['price']):.2f}€ / mesec</b>\n\n"
             )
     
-    msg += "----------------------------------\n"
+    msg += "━━━━━━━━━━━━━━━━━━\n"
     msg += f"🆔 <b>Tvoj ID za aktivacijo:</b> <code>{user_id}</code>\n"
     msg += "<i>(Klikni na številko zgoraj, da jo kopiraš)</i>\n\n"
     
