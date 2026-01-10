@@ -376,41 +376,38 @@ async def broadcast_command(update: telegram.Update, context: telegram.ext.Conte
     from config import ADMIN_ID
     if str(update.effective_user.id) != str(ADMIN_ID): return
 
-    if not context.args:
-        await update.message.reply_text("❌ Vpiši sporočilo: <code>/broadcast tekst</code>", parse_mode="HTML")
+    # Pridobimo surovo besedilo celotnega sporočila
+    raw_text = update.effective_message.text
+    
+    # Odrežemo ukaz '/broadcast' z začetka (prvih 10 ali 11 znakov)
+    if not raw_text or len(raw_text.split()) <= 1:
+        await update.message.reply_text("❌ Vpiši sporočilo!")
         return
 
-    # 1. Sestavimo sporočilo v HTML formatu
-    vsebina = " ".join(context.args)
+    # To odreže "/broadcast " in obdrži vse ENTER-je in presledke
+    vsebina = raw_text.split(None, 1)[1]
+
+    # Sestavimo sporočilo (pazimo, da ne uporabljamo ponovno join(args))
     sporočilo = (
         "📢 <b>OBVESTILO ADMINA</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         f"{vsebina}"
     )
     
-    # 2. Pridobimo ID-je
     vsi_id = db.get_all_chat_ids()
-    
-    # DEBUG izpis v konzolo VPS-ja, da boš videl, če sploh začne
-    print(f"📣 [BROADCAST] Začenjam pošiljanje {len(vsi_id)} uporabnikom...")
+    print(f"📣 [BROADCAST] Pošiljam {len(vsi_id)} uporabnikom...")
     
     poslano = 0
     for chat_id in vsi_id:
         try:
-            # UPORABIMO HTML! To bo preprečilo sesutje zaradi @JanJu_123
-            await context.bot.send_message(
-                chat_id=chat_id, 
-                text=sporočilo, 
-                parse_mode="HTML"
-            )
+            await context.bot.send_message(chat_id=chat_id, text=sporočilo, parse_mode="HTML")
             poslano += 1
-            await asyncio.sleep(0.05) # Pavza, da nas Telegram ne blokira
+            await asyncio.sleep(0.05)
         except Exception as e:
-            # Če pride do napake pri enem uporabniku (npr. nas je blokiral), gremo dalje
-            print(f"❌ Napaka pri pošiljanju uporabniku {chat_id}: {e}")
+            print(f"Ni mogoče poslati {chat_id}: {e}")
             continue
 
-    await update.message.reply_text(f"✅ Sporočilo uspešno poslano <b>{poslano}</b> uporabnikom.", parse_mode="HTML")
+    await update.message.reply_text(f"✅ Poslano <b>{poslano}</b> uporabnikom.", parse_mode="HTML")
 
 
 async def list_users_admin(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
