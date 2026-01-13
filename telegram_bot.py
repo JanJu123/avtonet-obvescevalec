@@ -359,6 +359,14 @@ async def packages_command(update: telegram.Update, context: telegram.ext.Contex
                 f"• Osveževanje: <code>{pkg['interval']} min</code>\n"
                 f"• Cena: <b>{float(pkg['price']):.2f}€ / mesec</b>\n\n"
             )
+
+    # --- NOVO: RAZDELEK ZA POPUSTE NA DALJŠI ZAKUP ---
+    msg += "<b>🎁 POSEBNA PONUDBA (Večmesečni zakupi):</b>\n"
+    msg += "━━━━━━━━━━━━━━━━━━\n"
+    msg += "• 3 meseci: <b>-10% POPUSTA</b>\n"
+    msg += "• 6 mesecev: <b>-25% POPUSTA</b> 🔥 <i>(Priporočeno)</i>\n"
+    msg += "──────────────────\n\n"
+    
     
     msg += "━━━━━━━━━━━━━━━━━━\n"
     msg += f"🆔 <b>Tvoj ID za aktivacijo:</b> <code>{user_id}</code>\n"
