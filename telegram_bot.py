@@ -361,11 +361,10 @@ async def packages_command(update: telegram.Update, context: telegram.ext.Contex
             )
 
     # --- NOVO: RAZDELEK ZA POPUSTE NA DALJŠI ZAKUP ---
-    msg += "<b>🎁 POSEBNA PONUDBA (Večmesečni zakupi):</b>\n"
+    msg += "<b>🎁 POSEBNA PONUDBA (Večmesečni nakupi):</b>\n"
     msg += "━━━━━━━━━━━━━━━━━━\n"
     msg += "• 3 meseci: <b>-10% POPUSTA</b>\n"
     msg += "• 6 mesecev: <b>-25% POPUSTA</b> 🔥 <i>(Priporočeno)</i>\n"
-    msg += "──────────────────\n\n"
     
     
     msg += "━━━━━━━━━━━━━━━━━━\n"
