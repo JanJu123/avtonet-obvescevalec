@@ -110,6 +110,10 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
                 try:
                     await context.bot.send_photo(chat_id=chat_id, photo=slika, caption=tekst, parse_mode="HTML")
                     success = True
+                except telegram.error.Forbidden:
+                    print(f"[{get_time()}] BLOCKED - Uporabnik {chat_id} je blokiral bota, deaktiviram.")
+                    db.deactivate_user(chat_id)
+                    continue
                 except Exception as img_err:
                     print(f"⚠️ Napaka pri sliki (ID:{oglas['content_id']}): {img_err}")
             
@@ -119,6 +123,10 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
             db.add_sent_ad(chat_id, oglas['content_id'])
             await asyncio.sleep(0.5) 
             
+        except telegram.error.Forbidden:
+            print(f"[{get_time()}] BLOCKED - Uporabnik {chat_id} je blokiral bota, deaktiviram.")
+            db.deactivate_user(chat_id)
+            continue
         except Exception as e:
             print(f"[{get_time()}] ❌ Napaka pri pošiljanju uporabniku {chat_id}: {e}")
 
@@ -155,6 +163,9 @@ async def check_subscription_expirations(context: telegram.ext.ContextTypes.DEFA
             await context.bot.send_message(chat_id=t_id, text=msg, parse_mode="HTML")
             db.set_expiry_reminder_sent(t_id) # Označi v bazi, da ne pošljemo še enkrat
             print(f"[SYSTEM] Poslano opozorilo o poteku uporabniku {t_id}")
+        except telegram.error.Forbidden:
+            print(f"[SYSTEM] Uporabnik {t_id} je blokiral bota, deaktiviram.")
+            db.deactivate_user(t_id)
         except Exception as e:
             print(f"Napaka pri pošiljanju opomina uporabniku {t_id}: {e}")
 
@@ -178,7 +189,11 @@ async def check_subscription_expirations(context: telegram.ext.ContextTypes.DEFA
         try:
             await context.bot.send_message(chat_id=t_id, text=msg, parse_mode="HTML")
             db.set_expiry_reminder_sent(t_id)
-        except: pass
+        except telegram.error.Forbidden:
+            print(f"[SYSTEM] Uporabnik {t_id} je blokiral bota, deaktiviram.")
+            db.deactivate_user(t_id)
+        except: 
+            pass
 
     # --- 2. DEL: DEJANSKI POTEK (Final Goodbye) ---
     expired_ids = db.get_newly_expired_users()
@@ -193,6 +208,9 @@ async def check_subscription_expirations(context: telegram.ext.ContextTypes.DEFA
             await context.bot.send_message(chat_id=t_id, text=msg, parse_mode="HTML")
             db.deactivate_user_after_expiry(t_id)
             print(f"[SYSTEM] Uporabnik {t_id} je bil deaktiviran (potek naročnine).")
+        except telegram.error.Forbidden:
+            print(f"[SYSTEM] Uporabnik {t_id} je blokiral bota, deaktiviram.")
+            db.deactivate_user(t_id)
         except Exception as e:
             print(f"Napaka pri deaktivaciji uporabnika {t_id}: {e}")
 
