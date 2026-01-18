@@ -78,7 +78,7 @@ async def start_command(update: telegram.Update, context: telegram.ext.ContextTy
 
 
 async def add_url_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
-    from scraper import Scraper
+    from scraper.avtonet.scraper import Scraper
     import utils 
     
     msg_obj = update.effective_message
@@ -876,7 +876,7 @@ async def server_status_command(update: telegram.Update, context: telegram.ext.C
 
 async def add_url_user_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     from config import ADMIN_ID
-    from scraper import Scraper
+    from scraper.avtonet.scraper import Scraper
     import utils
     
     # 1. Preverba Admina

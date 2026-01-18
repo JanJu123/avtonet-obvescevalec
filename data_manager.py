@@ -81,7 +81,7 @@ class DataManager():
 
 
 if __name__ == "__main__":
-    from scraper import Scraper
+    from scraper.avtonet.scraper import Scraper
 
     db = Database("test_bot.db")
     db.init_db()

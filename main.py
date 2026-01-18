@@ -2,10 +2,10 @@ import asyncio
 import telegram
 import telegram.ext
 from database import Database
-from scraper import Scraper
+from scraper.avtonet.scraper import Scraper
 from data_manager import DataManager
 from telegram.ext import CallbackQueryHandler
-from master_crawler import run_master_crawler_once
+from scraper.avtonet.master_crawler import run_master_crawler_once
 
 from telegram_bot import start_command, list_command, add_url_command, remove_url_command, info_command, activate_user, \
     deactivate_user, admin_stats_command, admin_help_command, broadcast_command, list_users_admin, admin_logs_command, \

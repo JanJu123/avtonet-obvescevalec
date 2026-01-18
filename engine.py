@@ -1,6 +1,6 @@
 from data_manager import DataManager
 from database import Database
-from scraper import Scraper
+from scraper.avtonet.scraper import Scraper
 
 
 class Engine():
