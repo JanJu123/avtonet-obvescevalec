@@ -118,22 +118,20 @@ class Database:
         )
         """)
 
-        # 8. Market Data
+        # 8. Market Data (Unified multi-source schema)
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS MarketData (
-            content_id TEXT PRIMARY KEY,    -- UNIQUE: isti oglas shranimo le enkrat
-            ime_avta TEXT,
-            cena TEXT,
-            leto_1_reg TEXT,
-            prevozenih TEXT,
-            gorivo TEXT,
-            menjalnik TEXT,
-            motor TEXT,
-            link TEXT,
-            raw_snippet TEXT,              -- Shranimo tisto, kar je AI dejansko bral (za debug)
-            enriched INTEGER DEFAULT 0,    -- 0 = not enriched, 1 = enriched by local pipeline
-            enriched_json TEXT,            -- JSON blob of enrichment payload
-            created_at DATETIME DEFAULT (strftime('%d.%m.%Y %H:%M:%S', 'now', 'localtime'))
+            content_id TEXT PRIMARY KEY,    -- UNIQUE: source_prefix + ID (e.g. an_12345)
+            source TEXT DEFAULT 'avtonet',  -- Source: avtonet, bolha, etc.
+            category TEXT DEFAULT 'car',    -- Category: car, electronics, etc.
+            title TEXT,                     -- Main title/description
+            price TEXT,                     -- Price
+            link TEXT,                      -- Link to original ad
+            snippet_data TEXT,              -- JSON: source-specific fields (leto_1_reg, prevozenih, gorivo, etc.)
+            enriched INTEGER DEFAULT 0,     -- 0 = not enriched, 1 = enriched by pipeline
+            enriched_json TEXT,             -- JSON blob of enrichment payload
+            created_at DATETIME DEFAULT (strftime('%d.%m.%Y %H:%M:%S', 'now', 'localtime')),
+            updated_at DATETIME DEFAULT (strftime('%d.%m.%Y %H:%M:%S', 'now', 'localtime'))
         )
         """)
 
@@ -1321,38 +1319,72 @@ class Database:
     
 
     def get_market_data_by_id(self, content_id):
-        """Poišče oglas v arhivu MarketData po ID-ju."""
+        """Poišče oglas v arhivu MarketData po ID-ju (normalizes an_ prefix)."""
         conn = self.get_connection()
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
-        res = c.execute("SELECT * FROM MarketData WHERE content_id = ?", (str(content_id),)).fetchone()
+        
+        # Normalize content_id with an_ prefix if not present
+        normalized_id = str(content_id)
+        if not normalized_id.startswith('an_'):
+            normalized_id = f"an_{normalized_id}"
+        
+        res = c.execute("SELECT * FROM MarketData WHERE content_id = ?", (normalized_id,)).fetchone()
         conn.close()
         return dict(res) if res else None
 
-    def insert_market_data(self, data, raw_snippet):
+    def insert_market_data(self, data, raw_snippet=None):
         """Shrani oglas v splošni arhiv trga za ML analitiko."""
+        import json
         conn = self.get_connection()
         c = conn.cursor()
         try:
+            # Normalize content_id - check if it already has a prefix
+            content_id = str(data.get('content_id', ''))
+            
+            # Check for existing prefixes (bo_, an_, etc)
+            if not any(content_id.startswith(prefix) for prefix in ['bo_', 'an_']):
+                # No prefix found, add default based on source
+                source = data.get('source', 'avtonet')
+                if source == 'bolha':
+                    content_id = f"bo_{content_id}"
+                else:
+                    content_id = f"an_{content_id}"
+            
+            # Build snippet_data JSON
+            # If snippet_data is already provided (e.g., from Bolha), use it directly
+            if isinstance(data.get('snippet_data'), str):
+                # Already a JSON string
+                snippet_data_json = data.get('snippet_data')
+            elif isinstance(data.get('snippet_data'), dict):
+                # Already a dict, convert to JSON
+                snippet_data_json = json.dumps(data.get('snippet_data'))
+            else:
+                # Build from old Avtonet-style fields
+                snippet_data = {
+                    'leto_1_reg': data.get('leto_1_reg'),
+                    'prevozenih': data.get('prevozenih'),
+                    'gorivo': data.get('gorivo'),
+                    'menjalnik': data.get('menjalnik'),
+                    'motor': data.get('motor')
+                }
+                snippet_data_json = json.dumps(snippet_data)
+            
             c.execute("""
                 INSERT OR IGNORE INTO MarketData (
-                    content_id, ime_avta, cena, leto_1_reg, 
-                    prevozenih, gorivo, menjalnik, motor, link, raw_snippet,
-                    enriched, enriched_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    content_id, source, category, title, price, link,
+                    snippet_data, enriched, enriched_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                str(data.get('content_id')),
-                data.get('ime_avta'),
-                data.get('cena'),
-                data.get('leto_1_reg'),
-                data.get('prevozenih'),
-                data.get('gorivo'),
-                data.get('menjalnik'),
-                data.get('motor'),
+                content_id,
+                data.get('source', 'avtonet'),
+                data.get('category', 'car'),
+                data.get('ime_avta') or data.get('title'),
+                data.get('cena') or data.get('price'),
                 data.get('link'),
-                raw_snippet,
-                0,
-                None
+                snippet_data_json,
+                data.get('enriched', 0),
+                data.get('enriched_json')
             ))
             conn.commit()
         except Exception as e:
@@ -1361,13 +1393,18 @@ class Database:
             conn.close()
 
     def mark_enriched(self, content_id, enriched_json):
-        """Označi oglas kot obdelan (enriched=1) in shrani JSON rezultat."""
+        """Označi oglas kot obdelan (enriched=1), shrani JSON rezultat, in posodobi updated_at."""
         conn = self.get_connection()
         c = conn.cursor()
         try:
+            # Normalize content_id with an_ prefix
+            normalized_id = str(content_id)
+            if not normalized_id.startswith('an_'):
+                normalized_id = f"an_{normalized_id}"
+            
             c.execute(
-                "UPDATE MarketData SET enriched = 1, enriched_json = ? WHERE content_id = ?",
-                (enriched_json, str(content_id)),
+                "UPDATE MarketData SET enriched = 1, enriched_json = ?, updated_at = strftime('%d.%m.%Y %H:%M:%S', 'now', 'localtime') WHERE content_id = ?",
+                (enriched_json, normalized_id),
             )
             conn.commit()
         except Exception as e:

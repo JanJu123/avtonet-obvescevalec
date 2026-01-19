@@ -24,6 +24,35 @@ DB_PATH = os.getenv("DB_PATH")
 db = Database(DB_PATH)
 
 
+# ===== DEV MODE MESSAGE ROUTING =====
+async def send_message(context, chat_id, text, parse_mode="HTML", **kwargs):
+    """
+    Smart message sender that respects DEV_MODE.
+    If DEV_MODE=1, routes all messages to ADMIN_ID only.
+    """
+    from config import TEST_BOT, DEV_MODE, ADMIN_ID
+    
+    target_chat = chat_id
+    msg_text = text
+    
+    # If dev mode enabled, route to admin only
+    if (TEST_BOT or DEV_MODE) and ADMIN_ID:
+        target_chat = int(ADMIN_ID)
+        if isinstance(msg_text, str):
+            msg_text = f"🧪 <b>[DEV MODE]</b> [Original target: {chat_id}]\n\n{msg_text}"
+    
+    try:
+        return await context.bot.send_message(
+            chat_id=target_chat,
+            text=msg_text,
+            parse_mode=parse_mode,
+            **kwargs
+        )
+    except Exception as e:
+        print(f"❌ Error sending message to {target_chat}: {e}")
+        return None
+
+
 async def start_command(update: telegram.Update, context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     from config import ADMIN_ID
     user = update.effective_user
@@ -49,7 +78,7 @@ async def start_command(update: telegram.Update, context: telegram.ext.ContextTy
         )
         try:
             # KLJUČNO: ADMIN_ID spremenimo v int(), da Telegram ne vrne errorja
-            await context.bot.send_message(chat_id=int(ADMIN_ID), text=admin_alert, parse_mode="HTML")
+            await send_message(context, int(ADMIN_ID), admin_alert, parse_mode="HTML")
         except Exception as e:
             print(f"Napaka pri obveščanju admina: {e}")
 
@@ -407,7 +436,7 @@ async def broadcast_command(update: telegram.Update, context: telegram.ext.Conte
     poslano = 0
     for chat_id in vsi_id:
         try:
-            await context.bot.send_message(chat_id=chat_id, text=sporočilo, parse_mode="HTML")
+            await send_message(context, chat_id=chat_id, text=sporočilo, parse_mode="HTML")
             poslano += 1
             await asyncio.sleep(0.05)
         except Exception as e:
@@ -533,7 +562,8 @@ async def activate_user(update: telegram.Update, context: telegram.ext.ContextTy
         
         # Obvestimo še uporabnika, da je dobil podaljšanje
         try:
-            await context.bot.send_message(
+            await send_message(
+                context,
                 chat_id=target_user_id,
                 text=f"🎉 <b>Tvoja naročnina je bila podaljšana!</b>\n\nNov datum poteka: <code>{new_expiry}</code>",
                 parse_mode="HTML"
@@ -563,7 +593,7 @@ async def deactivate_user(update: telegram.Update, context: telegram.ext.Context
         db.update_user_status(u_id, sub_type=None)
         
         await update.message.reply_text(f"🚫 Uporabnik `{u_id}` je bil deaktiviran.")
-        await context.bot.send_message(chat_id=u_id, text="⚠️ Tvoja naročnina je potekla ali bila preklicana. Za podaljšanje kontaktiraj admina.")
+        await send_message(context, chat_id=u_id, text="⚠️ Tvoja naročnina je potekla ali bila preklicana. Za podaljšanje kontaktiraj admina.")
     except (IndexError, ValueError):
         await update.message.reply_text("❌ Uporabi: `/deactivate ID`", parse_mode="Markdown")
 
@@ -911,7 +941,8 @@ async def add_url_user_command(update: telegram.Update, context: telegram.ext.Co
             
             # 6. Obvestilo UPORABNIKU (da vidi, da si mu zrihtal)
             try:
-                await context.bot.send_message(
+                await send_message(
+                    context,
                     chat_id=target_id, 
                     text="🛠️ <b>ADMIN SERVIS:</b>\nSkrbnik ti je pravkar dodal novo iskanje. Bot že išče nove oglase!",
                     parse_mode="HTML"
@@ -1076,7 +1107,8 @@ async def send_dm_command(update: telegram.Update, context: telegram.ext.Context
             "<i>Če imaš vprašanje, klikni spodnji gumb:</i>"
         )
         
-        await context.bot.send_message(
+        await send_message(
+            context,
             chat_id=target_id, 
             text=full_msg, 
             parse_mode="HTML",

@@ -161,3 +161,30 @@ def fix_avtonet_url(url):
         # Če gre karkoli narobe, izpišemo in vrnemo original (da se bot ne ustavi)
         print(f"Error fixing URL encoding: {e}")
         return url
+
+
+async def send_message_smart(context, chat_id, text, parse_mode="HTML", **kwargs):
+    """
+    Send message respecting dev mode.
+    If DEV_MODE or TEST_BOT is enabled, only send to ADMIN_ID.
+    Otherwise send to specified chat_id.
+    """
+    from config import SEND_ONLY_TO_ADMIN, ADMIN_ID, TEST_BOT, DEV_MODE
+    
+    # Determine target chat
+    target_chat = chat_id
+    if (TEST_BOT or DEV_MODE) and ADMIN_ID:
+        target_chat = int(ADMIN_ID)
+        # Prepend dev mode indicator
+        if isinstance(text, str):
+            text = f"🧪 <b>[DEV MODE]</b>\n\n{text}"
+    
+    try:
+        await context.bot.send_message(
+            chat_id=target_chat,
+            text=text,
+            parse_mode=parse_mode,
+            **kwargs
+        )
+    except Exception as e:
+        print(f"❌ Error sending message to {target_chat}: {e}")

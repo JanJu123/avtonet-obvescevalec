@@ -21,17 +21,43 @@ class Scraper:
 
     def _is_top_ponudba(self, row_soup):
         """Agresivna detekcija TOP ponudb, da ne trošimo AI tokenov."""
-        # 1. Preverimo Ribbon (značko) v kotu slike
+        
+        # PRIMARY DETECTION: Check for GO-Results-Top-Photo/Price/Data layout
+        # Top ponudbe have special layout with GO-Results-Top-Photo, GO-Results-Top-Price, etc.
+        top_layout_indicators = row_soup.find_all('div', class_=lambda x: x and any(
+            cls.startswith('GO-Results-Top-') and cls not in ['GO-Results-Top', 'GO-Results-Data-Top']
+            for cls in (x if isinstance(x, list) else [x])
+        ))
+        if len(top_layout_indicators) >= 3:  # Top ponudbe have many such divs
+            return True
+        
+        # Check for specific top ponudbe layout classes
+        if row_soup.find('div', class_=lambda x: x and 'GO-Results-Top-Photo' in (x if isinstance(x, list) else [x])):
+            return True
+        if row_soup.find('div', class_=lambda x: x and 'GO-Results-Top-Price' in (x if isinstance(x, list) else [x])):
+            return True
+        
+        # SECONDARY: Check for explicit TOP/PREMIUM/SUPER ribbons (not NOVO)
         ribbon = row_soup.find('div', class_='GO-ResultsRibbon')
         if ribbon:
             r_text = ribbon.get_text().upper()
-            if "TOP" in r_text or "IZPOSTAVLJENO" in r_text or "SUPER" in r_text:
+            # Only skip if ribbon says TOP, PREMIUM, SUPER (not NOVO)
+            if any(keyword in r_text for keyword in ['TOP', 'IZPOSTAVLJENO', 'SUPER', 'PREMIUM', 'OGLAS']):
                 return True
         
-        # 2. Preverimo senčenje (TOP oglasi imajo pogosto drugačen senci)
+        # Other feature class checks
         row_classes = row_soup.get('class', [])
-        featured_indicators = ['GO-Shadow-Featured', 'GO-Results-Featured', 'GO-Results-Row-TOP']
+        featured_indicators = ['GO-Shadow-Featured', 'GO-Results-Featured', 'GO-Results-Row-TOP', 'Featured', 'Premium', 'Highlighted']
         if any(indicator in row_classes for indicator in featured_indicators):
+            return True
+        
+        # Check for data attributes
+        if row_soup.get('data-premium') or row_soup.get('data-featured') or row_soup.get('data-top'):
+            return True
+        
+        # Check for special styling
+        style = row_soup.get('style', '')
+        if 'background' in style.lower() and any(color in style.lower() for color in ['yellow', 'gold', 'highlight']):
             return True
             
         return False

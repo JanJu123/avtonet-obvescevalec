@@ -10,7 +10,7 @@ from scraper.avtonet.master_crawler import run_master_crawler_once
 from telegram_bot import start_command, list_command, add_url_command, remove_url_command, info_command, activate_user, \
     deactivate_user, admin_stats_command, admin_help_command, broadcast_command, list_users_admin, admin_logs_command, \
     health_command, check_user_command, proxy_stats_command, packages_command, help_command, post_init, server_status_command, \
-    admin_overview_command, send_dm_command, add_url_user_command, button_callback_handler, admin_errors_command
+    admin_overview_command, send_dm_command, add_url_user_command, button_callback_handler, admin_errors_command, send_message
 
 from dotenv import load_dotenv
 import os
@@ -90,8 +90,8 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
         )
         
         try:
-            await context.bot.send_message(chat_id=t_id, text=user_msg, parse_mode="HTML")
-            await context.bot.send_message(chat_id=ADMIN_ID, text=f"🚨 POKVARJEN LINK: {u_name} ({t_id})", parse_mode="HTML")
+            await send_message(context, chat_id=t_id, text=user_msg, parse_mode="HTML")
+            await send_message(context, chat_id=ADMIN_ID, text=f"🚨 POKVARJEN LINK: {u_name} ({t_id})", parse_mode="HTML")
             db.update_url_fail_count(u_id) 
         except:
             pass
@@ -126,7 +126,8 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
             
             # Če slike ni ali pa je pošiljanje slike spodletelo
             if not success:
-                await context.bot.send_message(
+                await send_message(
+                    context,
                     chat_id=chat_id, 
                     text=tekst, 
                     parse_mode="HTML", 
@@ -167,7 +168,7 @@ async def check_subscription_expirations(context: telegram.ext.ContextTypes.DEFA
         )
         
         try:
-            await context.bot.send_message(chat_id=t_id, text=msg, parse_mode="HTML")
+            await send_message(context, chat_id=t_id, text=msg, parse_mode="HTML")
             db.set_expiry_reminder_sent(t_id) # Označi v bazi, da ne pošljemo še enkrat
             print(f"[SYSTEM] Poslano opozorilo o poteku uporabniku {t_id}")
         except Exception as e:
@@ -191,7 +192,7 @@ async def check_subscription_expirations(context: telegram.ext.ContextTypes.DEFA
             "Preveri ponudbo z ukazom: /packages"
         )
         try:
-            await context.bot.send_message(chat_id=t_id, text=msg, parse_mode="HTML")
+            await send_message(context, chat_id=t_id, text=msg, parse_mode="HTML")
             db.set_expiry_reminder_sent(t_id)
         except: pass
 
@@ -205,7 +206,7 @@ async def check_subscription_expirations(context: telegram.ext.ContextTypes.DEFA
             "Za ponovni zagon in prejem novih obvestil klikni /packages in kontaktiraj admina."
         )
         try:
-            await context.bot.send_message(chat_id=t_id, text=msg, parse_mode="HTML")
+            await send_message(context, chat_id=t_id, text=msg, parse_mode="HTML")
             db.deactivate_user_after_expiry(t_id)
             print(f"[SYSTEM] Uporabnik {t_id} je bil deaktiviran (potek naročnine).")
         except Exception as e:
@@ -284,3 +285,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+#!https://www.avto.net/Ads/results.asp?znamka=&model=&modelID=&tip=&znamka2=&model2=&tip2=&znamka3=&model3=&tip3=&cenaMin=0&cenaMax=999999&letnikMin=0&letnikMax=2090&bencin=0&starost2=999&oblika=&ccmMin=0&ccmMax=99999&mocMin=&mocMax=&kmMin=0&kmMax=9999999&kwMin=0&kwMax=999&motortakt=0&motorvalji=0&lokacija=0&sirina=&dolzina=&dolzinaMIN=&dolzinaMAX=&nosilnostMIN=&nosilnostMAX=&sedezevMIN=&sedezevMAX=&lezisc=&presek=&premer=&col=&vijakov=&EToznaka=&vozilo=&airbag=&barva=&barvaint=&doseg=&BkType=&BkOkvir=&BkOkvirType=&Bk4=&EQ1=1000000000&EQ2=1000000000&EQ3=1000000000&EQ4=100000000&EQ5=1000000000&EQ6=1000000000&EQ7=1110100120&EQ8=101000000&EQ9=100000002&EQ10=100000000&KAT=1060000000&PIA=&PIAzero=&PIAOut=&PSLO=&akcija=&paketgarancije=&broker=&prikazkategorije=&kategorija=61000&ONLvid=&ONLnak=&zaloga=10&arhiv=&presort=&tipsort=&stran=
+
+# kategorijo lahko določim pod: prikazkategorije=&kategorija=61000

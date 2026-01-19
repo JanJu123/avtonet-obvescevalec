@@ -134,12 +134,16 @@ class MasterCrawler:
                     if not orig:
                         continue
 
+                    # Map data to new schema
                     ad_data['content_id'] = ad_id
                     ad_data['link'] = orig['link']
+                    ad_data['source'] = 'avtonet'
+                    ad_data['category'] = 'car'
+                    
                     img_tag = orig['row_soup'].find('img')
                     ad_data['slika_url'] = img_tag.get('data-src') or img_tag.get('src') if img_tag else None
 
-                    self.db.insert_market_data(ad_data, orig['text'])
+                    self.db.insert_market_data(ad_data)
                     processed_ids.add(ad_id)
 
         # Manual fallback for any unprocessed IDs
@@ -149,7 +153,9 @@ class MasterCrawler:
             img_tag = orig['row_soup'].find('img')
             img_url = img_tag.get('data-src') or img_tag.get('src') if img_tag else None
             manual_data = self.scraper._manual_parse_row(orig['row_soup'], orig['id'], orig['link'], img_url)
-            self.db.insert_market_data(manual_data, orig['text'])
+            manual_data['source'] = 'avtonet'
+            manual_data['category'] = 'car'
+            self.db.insert_market_data(manual_data)
 
         return len(processed_ids) + sum(1 for orig in items if str(orig['id']) not in processed_ids)
 
