@@ -184,6 +184,27 @@ class Scraper:
                     'motor': None
                 }
                 self.db.insert_scraped_data(url_id, data)
+                
+                # Also save to MarketData as archive
+                market_data = {
+                    'content_id': content_id,
+                    'source': 'bolha',
+                    'category': 'item',
+                    'title': ad.get('title'),
+                    'price': ad.get('price'),
+                    'link': ad.get('link'),
+                    'snippet_data': json.dumps({
+                        'image_url': ad.get('image_url'),
+                        'location': ad.get('location'),
+                        'published_date': ad.get('published_date')
+                    }),
+                    'url_id': url_id
+                }
+                try:
+                    self.db.insert_market_data(market_data)
+                except Exception as market_error:
+                    print(f"[BOLHA] Warning: Could not save to MarketData: {market_error}")
+                
                 saved += 1
             except Exception as e:
                 print(f"[BOLHA] Error saving ad {ad.get('content_id')}: {e}")
