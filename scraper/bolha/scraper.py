@@ -168,7 +168,7 @@ class Scraper:
                     continue  # Skip duplicates
                 
                 # Insert into ScrapedData (with url_id for query filtering)
-                # For Bolha: location and published_date are in snippet, no enrichment needed
+                # For Bolha: location and published_date are in metadata, no enrichment needed
                 data = {
                     'content_id': content_id,
                     'ime_avta': ad.get('title'),
@@ -184,23 +184,6 @@ class Scraper:
                     'motor': None
                 }
                 self.db.insert_scraped_data(url_id, data)
-                
-                # Also save to MarketData as archive
-                market_data = {
-                    'content_id': content_id,
-                    'source': 'bolha',
-                    'category': 'item',
-                    'title': ad.get('title'),
-                    'price': ad.get('price'),
-                    'link': ad.get('link'),
-                    'snippet_data': {
-                        'image_url': ad.get('image_url'),
-                        'location': ad.get('location'),
-                        'published_date': ad.get('published_date')
-                    }
-                }
-                self.db.insert_market_data(market_data)
-                
                 saved += 1
             except Exception as e:
                 print(f"[BOLHA] Error saving ad {ad.get('content_id')}: {e}")
