@@ -17,11 +17,11 @@ import platform
 
 from dotenv import load_dotenv
 import os
+import config
 
 load_dotenv()
-DB_PATH = os.getenv("DB_PATH")
-# Povezava z bazo
-db = Database(DB_PATH)
+# Povezava z bazo - use config's DB_PATH which respects TEST_BOT mode
+db = Database(config.DB_PATH)
 
 
 # ===== DEV MODE MESSAGE ROUTING =====
@@ -123,17 +123,25 @@ async def add_url_command(update: telegram.Update, context: telegram.ext.Context
     t_name = update.effective_user.first_name
 
     # 1. Validacija linka
-    if "avto.net" not in raw_url.lower() or "results.asp" not in raw_url.lower():
+    is_avtonet = "avto.net" in raw_url.lower() and "results.asp" in raw_url.lower()
+    is_bolha = "bolha.com" in raw_url.lower()
+    
+    if not (is_avtonet or is_bolha):
         db.log_user_activity(t_id, "/add_url", f"ZAVRNJENO: Neveljaven link")
         await msg_obj.reply_text(
             "❌ <b>NAPAKA: To ni veljaven iskalni link!</b>\n\n"
-            "Pojdi na Avto.net, nastavi filtre in kopiraj <b>celoten</b> naslov iz brskalnika.",
+            "Pojdi na Avto.net ali Bolha.com, nastavi filtre in kopiraj <b>celoten</b> naslov iz brskalnika.",
             parse_mode="HTML"
         )
         return
 
     # 2. Čiščenje in popravek sortiranja
-    fixed_url = utils.fix_avtonet_url(raw_url)
+    if is_avtonet:
+        fixed_url = utils.fix_avtonet_url(raw_url)
+    elif is_bolha:
+        fixed_url = utils.fix_bolha_url(raw_url)
+    else:
+        fixed_url = raw_url
 
     # 3. Preveri naročnino in limite
     user_info = db.get_user_subscription_info(t_id)
@@ -151,6 +159,40 @@ async def add_url_command(update: telegram.Update, context: telegram.ext.Context
         )
         return
 
+    # 3.5. Validacija URL-ja: Preveri, če ima redno ponudbo (ne samo izpostavljene oglase)
+    validation_msg = await msg_obj.reply_text("🔍 Preverjam URL...")
+    try:
+        if is_bolha:
+            from scraper.bolha.scraper import Scraper as BolhaScraper
+            from bs4 import BeautifulSoup
+            test_scraper = BolhaScraper(db)
+            test_html, _, test_status = test_scraper.get_latest_offers(fixed_url)
+            if test_status == 200:
+                soup = BeautifulSoup(test_html, 'html.parser')
+                # Check if EntityList--Regular section exists (indicates regular user listings)
+                regular_section = soup.find('section', class_='EntityList--Regular')
+                if not regular_section:
+                    await validation_msg.edit_text(
+                        "❌ <b>URL ZAVRNJEN!</b>\n\n"
+                        "Ta iskalna stran je <b>premalo specifična</b> - ima samo izpostavljene oglase (ni redne ponudbe).\n\n"
+                        "Poskusi s konkretnejšo kategorijo, npr:\n"
+                        "• bolha.com/avtodeli\n"
+                        "• bolha.com/racunalnistvo\n"
+                        "• bolha.com/elektronika",
+                        parse_mode="HTML"
+                    )
+                    db.log_user_activity(t_id, "/add_url", f"ZAVRNJENO: Ni redne ponudbe")
+                    return
+                else:
+                    test_ads = test_scraper.extract_all_ads(test_html)
+                    await validation_msg.edit_text(f"✅ Najdeno {len(test_ads)} oglasov...")
+            else:
+                await validation_msg.delete()
+        # Za Avtonet je logika že implementirana, zato preskoči
+    except Exception as e:
+        print(f"URL validation error: {e}")
+        await validation_msg.delete()
+
     # 4. Dodajanje v bazo
     status, new_url_id = db.add_search_url(t_id, fixed_url)
 
@@ -165,23 +207,30 @@ async def add_url_command(update: telegram.Update, context: telegram.ext.Context
             # UPORABNIK JE AKTIVEN - Standardni sync in uspeh
             sync_msg = await msg_obj.reply_text("⏳ Sinhroniziram trenutne oglase (tiha sinhronizacija)...")
             try:
-                temp_scraper = Scraper(db)
-                # NOVO: Pripravimo še binarno verzijo za scraper
-                url_bin = fixed_url.encode('latin-1', 'ignore')
-                
-                # Dodamo 'url_bin' v seznam
-                pending_data = [{
-                    'url_id': new_url_id, 
-                    'url': fixed_url, 
-                    'url_bin': url_bin, # <--- TUKAJ JE MANJKALO!
-                    'telegram_name': t_name
-                }]
-                
-                await asyncio.to_thread(temp_scraper.run, pending_data)
+                # Izberemo pravilni scraper glede naURL
+                if is_avtonet:
+                    temp_scraper = Scraper(db)
+                    url_bin = fixed_url.encode('latin-1', 'ignore')
+                    pending_data = [{
+                        'url_id': new_url_id, 
+                        'url': fixed_url, 
+                        'url_bin': url_bin,
+                        'telegram_name': t_name
+                    }]
+                    await asyncio.to_thread(temp_scraper.run, pending_data)
+                elif is_bolha:
+                    from scraper.bolha.scraper import Scraper as BolhaScraper
+                    bolha_scraper = BolhaScraper(db)
+                    print(f"[BOLHA ADD_URL] Scraping: {fixed_url}")
+                    ads = await asyncio.to_thread(bolha_scraper.run_with_pagination, fixed_url)
+                    print(f"[BOLHA ADD_URL] Found {len(ads) if ads else 0} ads")
+                    if ads:
+                        saved = await asyncio.to_thread(bolha_scraper.save_ads_to_market_data, ads)
+                        print(f"[BOLHA ADD_URL] Saved {saved} ads to MarketData")
                 
                 await sync_msg.edit_text(
                     "✅ <b>Iskanje uspešno dodano!</b>\n\n"
-                    "Sistem si je zapomnil trenutno ponudbo. Obvestim te takoj, ko se pojavi kakšen <b>nov</b> avtomobil! 🚀",
+                    "Sistem si je zapomnil trenutno ponudbo. Obvestim te takoj, ko se pojavi kakšen <b>nov</b> oglas! 🚀",
                     parse_mode="HTML"
                 )
             except Exception as e:
@@ -913,17 +962,30 @@ async def add_url_user_command(update: telegram.Update, context: telegram.ext.Co
     if str(update.effective_user.id) != str(ADMIN_ID): return
 
     try:
-        # Ukaz: /add_url_user 12345678 https://www.avto.net/...
+        # Ukaz: /add_url_user 12345678 https://www.avto.net/... OR https://www.bolha.com/...
         if len(context.args) < 2:
             raise ValueError
 
         target_id = context.args[0]
         raw_url = context.args[1]
 
-        # 2. Čiščenje URL-ja
-        fixed_url = utils.fix_avtonet_url(raw_url)
+        # 2. Validacija linka
+        is_avtonet = "avto.net" in raw_url.lower() and "results.asp" in raw_url.lower()
+        is_bolha = "bolha.com" in raw_url.lower()
+        
+        if not (is_avtonet or is_bolha):
+            await update.message.reply_text("❌ Neveljaven URL! Dovolimo samo Avto.net in Bolha.com iskalne linke.", parse_mode="HTML")
+            return
 
-        # 3. Dodajanje v bazo (uporabimo tvojo obstoječo metodo)
+        # 3. Čiščenje URL-ja
+        if is_avtonet:
+            fixed_url = utils.fix_avtonet_url(raw_url)
+        elif is_bolha:
+            fixed_url = utils.fix_bolha_url(raw_url)
+        else:
+            fixed_url = raw_url
+
+        # 4. Dodajanje v bazo (uporabimo tvojo obstoječo metodo)
         status, new_url_id = db.add_search_url(target_id, fixed_url)
 
         if status == "exists":

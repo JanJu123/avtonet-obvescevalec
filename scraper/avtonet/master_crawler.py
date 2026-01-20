@@ -25,6 +25,12 @@ class MasterCrawler:
         self.db = db
         self.scraper = Scraper(db)
         self.ai = AIHandler()
+        self.base_url = None  # Store URL for kategorija extraction
+    
+    def _extract_kategorija(self, url: str) -> str:
+        """Extract kategorija parameter from Avtonet URL (store as category)."""
+        match = re.search(r'kategorija=(\d+)', url)
+        return match.group(1) if match else None
 
     def crawl_once(self, urls=None):
         target_urls = urls or config.MASTER_URLS
@@ -48,6 +54,7 @@ class MasterCrawler:
         current_page = 1
         all_candidates = []
         seen_ids = set()
+        kategorija = self._extract_kategorija(base_url)  # Extract once per URL
 
         while current_page <= config.MASTER_MAX_PAGES:
             page_url = self._with_page(base_url, current_page)
@@ -99,6 +106,7 @@ class MasterCrawler:
                     "text": self.scraper._clean_row_for_ai(row),
                     "link": "https://www.avto.net" + href.replace("..", ""),
                     "slika_url": img_url,
+                    "category": kategorija,  # Store kategorija code as category
                 })
 
             all_candidates.extend(page_candidates)
@@ -138,7 +146,7 @@ class MasterCrawler:
                     ad_data['content_id'] = ad_id
                     ad_data['link'] = orig['link']
                     ad_data['source'] = 'avtonet'
-                    ad_data['category'] = 'car'
+                    ad_data['category'] = orig.get('category')  # Store kategorija code as category
                     
                     img_tag = orig['row_soup'].find('img')
                     ad_data['slika_url'] = img_tag.get('data-src') or img_tag.get('src') if img_tag else None

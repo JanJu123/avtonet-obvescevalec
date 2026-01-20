@@ -53,16 +53,27 @@ from config import (
     PROXY_PRICE_GB,
     ENABLE_MASTER_CRAWLER,
     MASTER_CRAWL_INTERVAL,
+    TEST_BOT,                           
+    DEV_MODE,
 )
 
-async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE, send_notifications=True):
     def get_time():
         return datetime.datetime.now().strftime('%H:%M:%S')
 
     print(f"\n{B_CYAN}--- [ PAMETNI CIKEL PREVERJANJA: {get_time()} ] ---{B_END}")
     
     db = Database(DB_PATH)
+    
+    # Clear previous cycle's ScrapedData snapshot (VPS behavior)
+    db.clear_scraped_snapshot()
+    
     pending_urls = db.get_pending_urls()
+    
+    # V razvojnem načinu procesujem samo svoje URL-je (ADMIN_ID)
+    if TEST_BOT or DEV_MODE:
+        admin_id_int = int(ADMIN_ID)
+        pending_urls = [u for u in pending_urls if u.get('telegram_id') == admin_id_int]
     
     if not pending_urls:
         print(f"{B_BLUE}[{get_time()}] IDLE - Noben URL še ni na vrsti.{B_END}")
@@ -71,10 +82,40 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     pending_ids = [u['url_id'] for u in pending_urls]
     print(f"{B_GREEN}[{get_time()}] START - {len(pending_ids)} URL-jev na vrsti{B_END}")
 
-    scraper = Scraper(DataBase=db)
+    # Ločimo URL-je po virih
+    avtonet_urls = [u for u in pending_urls if "avto.net" in u['url'].lower()]
+    bolha_urls = [u for u in pending_urls if "bolha.com" in u['url'].lower()]
+    
+    # Log which URLs are pending
+    if avtonet_urls:
+        print(f"{B_YELLOW}[{get_time()}] AVTONET - {len(avtonet_urls)} URL(s) pending{B_END}")
+    if bolha_urls:
+        print(f"{B_YELLOW}[{get_time()}] BOLHA - {len(bolha_urls)} URL(s) pending{B_END}")
+    
     manager = DataManager(db)
 
-    await asyncio.to_thread(scraper.run, pending_urls) 
+    # Avtonet obdelava (obstoječa logika)
+    if avtonet_urls:
+        scraper = Scraper(DataBase=db)
+        await asyncio.to_thread(scraper.run, avtonet_urls)
+    
+    # Bolha obdelava (paralelno za vsak URL)
+    if bolha_urls:
+        from scraper.bolha.scraper import Scraper as BolhaScraper
+        
+        async def process_bolha_url(url_entry):
+            bolha_scraper = BolhaScraper(db)
+            try:
+                print(f"[{get_time()}] BOLHA SCAN - URL ID {url_entry['url_id']} ({url_entry.get('telegram_name', 'Neznan')})...")
+                ads = await asyncio.to_thread(bolha_scraper.run_with_pagination, url_entry['url'])
+                if ads:
+                    print(f"[{get_time()}] BOLHA - Najdeno {len(ads)} oglasov, shranjevanje...")
+                    await asyncio.to_thread(bolha_scraper.save_ads_to_scraped_data, ads, url_entry['url_id'])
+            except Exception as e:
+                print(f"[{get_time()}] ❌ BOLHA napaka za URL ID {url_entry['url_id']}: {e}")
+        
+        # Izvrši vse Bolha URL-je paralelno
+        await asyncio.gather(*[process_bolha_url(url) for url in bolha_urls]) 
     
     failed_ones = db.get_newly_failed_urls()
     for f in failed_ones:
@@ -100,6 +141,13 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
     
     if not novi_oglasi:
         print(f"{B_BLUE}[{get_time()}] INFO - Ni novih oglasov za te skene.{B_END}")
+        return
+
+    # Mark ads as sent even during silent check (prevent respam on next cycle)
+    if not send_notifications:
+        for oglas in novi_oglasi:
+            db.add_sent_ad(oglas['target_user_id'], oglas['content_id'])
+        print(f"{B_YELLOW}[{get_time()}] STARTUP - Silent check complete ({len(novi_oglasi)} new ads found, marked as sent, notifications skipped).{B_END}")
         return
 
     print(f"{B_YELLOW}[{get_time()}] SEND - Pošiljam {len(novi_oglasi)} novih obvestil...{B_END}")
@@ -131,7 +179,7 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
                     chat_id=chat_id, 
                     text=tekst, 
                     parse_mode="HTML", 
-                    disable_web_page_preview=False
+                    disable_web_page_preview=True
                 )
             
             db.add_sent_ad(chat_id, oglas['content_id'])
@@ -258,8 +306,17 @@ def main():
     application.add_handler(telegram.ext.CommandHandler("logs", admin_logs_command))
 
     # --- NASTAVITEV PERIODIČNEGA OPRAVILA ---
-    # Preverjaj vsakih 300 sekund (5 minut), začni čez 10 sekund
-    application.job_queue.run_repeating(check_for_new_ads, interval=120, first=10)
+    # Preverjaj vsakih 120 sekund (2 minut)
+    # First run after 10 sec with send_notifications=False (startup silent check)
+    # Then repeat every 120 sec with default send_notifications=True
+    
+    async def first_check(context: telegram.ext.ContextTypes.DEFAULT_TYPE):
+        """Startup silent check - populate DB without spamming users."""
+        await check_for_new_ads(context, send_notifications=False)
+        # Schedule regular checks after this
+        application.job_queue.run_repeating(check_for_new_ads, interval=120)
+    
+    application.job_queue.run_once(first_check, when=10)
 
     # Master crawler (MarketData-only cache warmer)
     if ENABLE_MASTER_CRAWLER:
@@ -286,6 +343,3 @@ def main():
 if __name__ == "__main__":
     main()
 
-#!https://www.avto.net/Ads/results.asp?znamka=&model=&modelID=&tip=&znamka2=&model2=&tip2=&znamka3=&model3=&tip3=&cenaMin=0&cenaMax=999999&letnikMin=0&letnikMax=2090&bencin=0&starost2=999&oblika=&ccmMin=0&ccmMax=99999&mocMin=&mocMax=&kmMin=0&kmMax=9999999&kwMin=0&kwMax=999&motortakt=0&motorvalji=0&lokacija=0&sirina=&dolzina=&dolzinaMIN=&dolzinaMAX=&nosilnostMIN=&nosilnostMAX=&sedezevMIN=&sedezevMAX=&lezisc=&presek=&premer=&col=&vijakov=&EToznaka=&vozilo=&airbag=&barva=&barvaint=&doseg=&BkType=&BkOkvir=&BkOkvirType=&Bk4=&EQ1=1000000000&EQ2=1000000000&EQ3=1000000000&EQ4=100000000&EQ5=1000000000&EQ6=1000000000&EQ7=1110100120&EQ8=101000000&EQ9=100000002&EQ10=100000000&KAT=1060000000&PIA=&PIAzero=&PIAOut=&PSLO=&akcija=&paketgarancije=&broker=&prikazkategorije=&kategorija=61000&ONLvid=&ONLnak=&zaloga=10&arhiv=&presort=&tipsort=&stran=
-
-# kategorijo lahko določim pod: prikazkategorije=&kategorija=61000

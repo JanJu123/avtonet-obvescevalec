@@ -26,23 +26,37 @@ class AIHandler:
         combined_text = ""
         for idx, item in enumerate(raw_snippets):
             combined_text += f"OGLAS #{idx+1} [ID:{item['id']}]: {item['text']}\n---\n"
+        
+        # DEBUG: Show what we're sending
+        print(f"\n[AI DEBUG] Sending {len(raw_snippets)} ads to AI:")
+        print(f"Combined text length: {len(combined_text)} chars")
+        print(f"First 500 chars:\n{combined_text[:500]}\n")
 
         prompt = f"""
-        STREŽNIŠKO NAVODILO: Si robotski ekstraktor podatkov. 
+        STREŽNIŠKO NAVODILO: Si robotski ekstraktor podatkov za avtomobilske oglase. 
         Tvoj odgovor mora biti IZKLJUČNO veljaven JSON seznam objektov brez dodatnega besedila.
 
         NUJNA PRAVILA ZA FORMATIRANJE:
-        1. "content_id": Vrni točno številko iz oznake [ID:xxxx].
+        1. "content_id": Vrni točno številko/ID iz oznake [ID:xxxx].
         2. "ime_avta": Čisto ime (npr. "Audi A4 2.0 TDI"). Odstrani smeti kot so "NOVO", "AKCIJA", "1. LASTNIK".
-        3. "cena": Številka s piko in znak €, npr. "12.490 €". Če piše 'Pokličite', napiši 'Pokličite'.
-        4. "leto_1_reg": Samo 4-mestna številka leta, npr. "2021".
-        5. "prevozenih": Številka s piko in 'km', npr. "145.000 km".
-        6. "gorivo": Mala tiskana beseda (diesel, bencin, hibrid, elektro).
-        7. "menjalnik": "avtomatski" ali "ročni".
-        8. "motor": Prostornina in moč, npr. "1968 ccm, 110 kW / 150 KM".
+        3. "cena": Številka s piko in znak €, npr. "12.490 €". Če piše 'Pokličite' ali je neznana, napiši 'Pokličite'.
 
-        VAROVALKA: Če podatka ne najdeš, uporabi vrednost "Neznano". 
-        NIKOLI ne spreminjaj imen ključev (content_id, ime_avta, itd.), sicer sistem ne bo deloval.
+        AVTONET SPECIFIČNA POLJA (VEDNO vključi, tudi če je null/neznano):
+        4. "leto_1_reg": Samo 4-mestna številka leta, npr. "2021". Vrni null če ni.
+        5. "prevozenih": Številka s piko in 'km', npr. "145.000 km". Vrni null če ni.
+        6. "gorivo": Mala tiskana beseda (diesel, bencin, hibrid, elektro). Vrni null če ni.
+        7. "menjalnik": "avtomatski" ali "ročni". Vrni null če ni.
+        8. "motor": Prostornina in moč, npr. "1968 ccm, 110 kW / 150 KM". Vrni null če ni.
+
+        DODATNA POLJA (če obstajajo - vrni null če niso):
+        9. "lokacija": Mesto prodajnega oglasa.
+        10. "objavljen": Datum objave ali čas objave.
+        11. "starost": Starost vozila (npr. "5 let") - za motorje/skuterje.
+        12. "moč": Moč motorja (npr. "118 kW" ali "50 ccm").
+        13. "obseg": Prostornina (npr. "600 ccm").
+        14. "teža": Masa (npr. "200 kg").
+
+        KRITIČNO: Vsi ključi morajo biti točno kot zgoraj našteti! Ne spreminjaj imen!
 
         PODATKI ZA OBDELAVO:
         {combined_text}
@@ -62,15 +76,25 @@ class AIHandler:
             
             self.call_count_today += 1
             content = response.choices[0].message.content
+            
+            # DEBUG: Print raw AI response
+            print(f"\n[AI DEBUG] Raw response:\n{content}\n")
+            
             data = json.loads(content)
+            
+            # DEBUG: Print parsed data
+            print(f"[AI DEBUG] Parsed JSON:\n{json.dumps(data, indent=2, ensure_ascii=False)}\n")
             
             # Normalizacija odgovora (da vedno dobimo seznam)
             if isinstance(data, dict):
                 # Če AI zapakira seznam v ključ (npr. "ads": [...])
                 for key in data:
                     if isinstance(data[key], list):
+                        print(f"[AI DEBUG] Found list under key: {key}")
                         return data[key]
+                print(f"[AI DEBUG] Returning single dict as list")
                 return [data]
+            print(f"[AI DEBUG] Returning data as-is (already list)")
             return data
 
         except Exception as e:

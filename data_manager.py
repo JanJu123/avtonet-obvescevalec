@@ -9,7 +9,9 @@ class DataManager():
 
     def check_new_offers(self, filter_url_ids=None):
         """
-        Poišče nove oglase. Če je podan filter_url_ids, gleda samo te URL-je.
+        Poišče nove oglase iz OBEH tabel (ScrapedData za Avtonet in MarketData za Bolha).
+        Če je podan filter_url_ids, gleda samo te URL-je.
+        Sortirani po created_at (najnovejši naprej).
         """
         if not filter_url_ids:
             return []
@@ -21,7 +23,7 @@ class DataManager():
         # Priprava vprašajev za SQL ( ?, ?, ? )
         placeholders = ', '.join(['?'] * len(filter_url_ids))
         
-        # Poiščemo oglase, ki so v ScrapedData, a jih uporabnik še nima v SentAds
+        # Query ScrapedData (filtered by user's URLs) for unsent ads
         query = f"""
             SELECT sd.*, t.telegram_id as target_user_id
             FROM ScrapedData sd
@@ -32,14 +34,31 @@ class DataManager():
                 WHERE sa.telegram_id = t.telegram_id 
                 AND sa.content_id = sd.content_id
             )
+            ORDER BY sd.created_at DESC
         """
         
-        rows = c.execute(query, filter_url_ids).fetchall()
+        params = filter_url_ids
+        rows = c.execute(query, params).fetchall()
         conn.close()
         
-        return [dict(row) for row in rows]
+        # Merge JSON metadata back into each row
+        result = []
+        for row in rows:
+            row_dict = dict(row)
+            # Parse metadata JSON and merge into row
+            if row_dict.get('metadata'):
+                try:
+                    metadata = json.loads(row_dict['metadata'])
+                    row_dict.update(metadata)
+                except:
+                    pass  # If JSON parse fails, just skip
+            result.append(row_dict)
+        
+        return result
 
     def format_telegram_message(self, oglas):
+        from datetime import datetime
+        
         # --- PAMETNO ČIŠČENJE ---
         ime = html.escape(str(oglas.get('ime_avta', 'Neznano')))
         
@@ -61,6 +80,21 @@ class DataManager():
         gorivo = html.escape(str(oglas.get('gorivo', 'Neznano'))).replace(' motor', '')
         menjalnik = html.escape(str(oglas.get('menjalnik', 'Neznano')))
         motor = html.escape(str(oglas.get('motor', 'Neznano')))
+        
+        # For Bolha: location and publish time
+        lokacija = oglas.get('lokacija', '').strip() if oglas.get('lokacija') else None
+        
+        # Format publish date to Slovenian format (DD.MM.YYYY)
+        published_date_raw = oglas.get('published_date', '').strip() if oglas.get('published_date') else None
+        published_date = None
+        if published_date_raw:
+            try:
+                # Parse ISO format: 2026-01-20T18:34:59+01:00
+                dt = datetime.fromisoformat(published_date_raw.replace('Z', '+00:00'))
+                published_date = dt.strftime('%d.%m.%Y')
+            except:
+                published_date = published_date_raw  # Fallback to raw if parsing fails
+        
         link = oglas.get('link', 'https://www.avto.net')
 
         # Sestava sporočila
@@ -69,13 +103,27 @@ class DataManager():
             f"━━━━━━━━━━━━━━━━━━\n"
             f"<b>{ime}</b>\n\n"
             f"Cena: <b>{cena}</b>\n"
-            f"Letnik: <b>{leto}</b>\n"
-            f"Kilometri: <b>{km}</b>\n"
-            f"Gorivo: <b>{gorivo}</b>\n"
-            f"Menjalnik: <b>{menjalnik}</b>\n"
-            f"Motor: <b>{motor}</b>\n\n"
-            f"🔗 <a href='{link}'>KLIKNI ZA OGLED OGLASA</a>"
         )
+        
+        # Add car-specific fields (Avtonet)
+        if leto != 'Neznano' or km != 'Neznano' or gorivo != 'Neznano':
+            msg += (
+                f"Letnik: <b>{leto}</b>\n"
+                f"Kilometri: <b>{km}</b>\n"
+                f"Gorivo: <b>{gorivo}</b>\n"
+                f"Menjalnik: <b>{menjalnik}</b>\n"
+                f"Motor: <b>{motor}</b>\n\n"
+            )
+        
+        # Add Bolha-specific fields (location, publish time)
+        if lokacija or published_date:
+            if lokacija:
+                msg += f"Lokacija: <b>{html.escape(lokacija)}</b>\n"
+            if published_date:
+                msg += f"Objavljeno: <b>{published_date}</b>\n"
+            msg += "\n"
+        
+        msg += f"🔗 <a href='{link}'>KLIKNI ZA OGLED OGLASA</a>"
         return msg
     
 

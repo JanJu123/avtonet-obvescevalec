@@ -113,7 +113,7 @@ def extrahiraj_podatke(oglas_div):
 def fix_avtonet_url(url):
     """
     Popravi kodiranje (ŠČŽ) z uporabo cp1250, ki ga Avto.net razume.
-    Odstrani vse presledke in popravi sortiranje, če obstaja.
+    Odstrani vse presledke in VEDNO nastavi sortiranje na "NOVO" (najnovejši oglasi).
     """
     # 1. Osnovno čiščenje smeti (oklepaji in presledki na začetku/koncu)
     url = url.strip().strip('<>')
@@ -131,17 +131,15 @@ def fix_avtonet_url(url):
         # Uporabimo 'cp1250', ker Avto.net uporablja ta standard za ŠČŽ
         query_params = urllib.parse.parse_qs(u.query, encoding='cp1250')
 
-        # 4. Popravimo parametre (če obstajajo), da ostanejo v nujnem formatu
-        if 'presort' in query_params:
-            query_params['presort'] = ['3']
-        if 'tipsort' in query_params:
-            query_params['tipsort'] = ['DESC']
-        if 'subSORT' in query_params:
-            query_params['subSORT'] = ['3']
-        if 'subTIPSORT' in query_params:
-            query_params['subTIPSORT'] = ['DESC']
-        if 'stran' in query_params:
-            query_params['stran'] = ['1']
+        # 4. VEDNO nastavi sortiranje na NOVO (najnovejši oglasi)
+        # presort=3 in tipsort=DESC = Najnovejši oglasi naprej
+        query_params['presort'] = ['3']
+        query_params['tipsort'] = ['DESC']
+        query_params['subSORT'] = ['3']
+        query_params['subTIPSORT'] = ['DESC']
+        
+        # Poskrbi, da se vedno začne na strani 1 (ne na kakšni naključni)
+        query_params['stran'] = ['1']
 
         # 5. ZAKODIRAMO NAZAJ v 'cp1250'
         # To bo spremenilo 'Š' v '%8A', kar je edini način, da Avto.net ne vrne Error 005
@@ -160,6 +158,43 @@ def fix_avtonet_url(url):
     except Exception as e:
         # Če gre karkoli narobe, izpišemo in vrnemo original (da se bot ne ustavi)
         print(f"Error fixing URL encoding: {e}")
+        return url
+
+
+def fix_bolha_url(url):
+    """
+    Popravi Bolha URL - če že ima sort parameter, ga nastavi na "new" (najnovejši oglasi).
+    Če nema sort parametra, ga ne dodaj (da ne pokvarim URL-ja).
+    """
+    url = url.strip().strip('<>')
+    
+    try:
+        # Razstavimo URL
+        u = urllib.parse.urlparse(url)
+        query_params = urllib.parse.parse_qs(u.query)
+        
+        # SAMO ČE JE SORT ŽE PRISOTEN, ga nastavi na "new"
+        if 'sort' in query_params:
+            query_params['sort'] = ['new']
+            
+            # Zakodiramo nazaj
+            new_query = urllib.parse.urlencode(query_params, doseq=True)
+            
+            fixed_url = urllib.parse.urlunparse((
+                u.scheme,
+                u.netloc,
+                u.path,
+                u.params,
+                new_query,
+                u.fragment
+            ))
+            
+            return fixed_url
+        else:
+            # Nema sort parametra - vrnemo original, da ne pokvarim URL-ja
+            return url
+    except Exception as e:
+        print(f"Error fixing Bolha URL: {e}")
         return url
 
 

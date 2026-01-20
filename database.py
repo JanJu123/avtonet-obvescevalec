@@ -66,13 +66,9 @@ class Database:
             content_id TEXT,           
             ime_avta TEXT,
             cena TEXT,
-            leto_1_reg TEXT,     -- Preimenovano
-            prevozenih TEXT,
-            gorivo TEXT,
-            menjalnik TEXT,      -- NOVO
-            motor TEXT,           -- NOVO
             link TEXT,
             slika_url TEXT,
+            metadata JSON,        -- Flexible storage for any additional fields
             created_at DATETIME DEFAULT (strftime('%d.%m.%Y %H:%M:%S', 'now', 'localtime')),
             FOREIGN KEY (url_id) REFERENCES Urls (url_id)
         )
@@ -123,15 +119,15 @@ class Database:
         CREATE TABLE IF NOT EXISTS MarketData (
             content_id TEXT PRIMARY KEY,    -- UNIQUE: source_prefix + ID (e.g. an_12345)
             source TEXT DEFAULT 'avtonet',  -- Source: avtonet, bolha, etc.
-            category TEXT DEFAULT 'car',    -- Category: car, electronics, etc.
+            category TEXT,                  -- Category: avtonet_kategorija code (0=car, 1=motorcycle, etc.)
             title TEXT,                     -- Main title/description
             price TEXT,                     -- Price
             link TEXT,                      -- Link to original ad
             snippet_data TEXT,              -- JSON: source-specific fields (leto_1_reg, prevozenih, gorivo, etc.)
             enriched INTEGER DEFAULT 0,     -- 0 = not enriched, 1 = enriched by pipeline
             enriched_json TEXT,             -- JSON blob of enrichment payload
-            created_at DATETIME DEFAULT (strftime('%d.%m.%Y %H:%M:%S', 'now', 'localtime')),
-            updated_at DATETIME DEFAULT (strftime('%d.%m.%Y %H:%M:%S', 'now', 'localtime'))
+            created_at DATETIME DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime')),
+            updated_at DATETIME DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime'))
         )
         """)
 
@@ -154,24 +150,43 @@ class Database:
         conn = self.get_connection()
         c = conn.cursor()
         try:
+            import json
+            
+            # Core fields (always queryable)
+            content_id = data.get('content_id')
+            ime_avta = data.get('ime_avta')
+            cena = data.get('cena')
+            link = data.get('link')
+            slika_url = data.get('slika_url')
+            
+            # Everything else goes to JSON metadata (flexible, no schema changes needed)
+            metadata = {
+                'leto_1_reg': data.get('leto_1_reg'),
+                'prevozenih': data.get('prevozenih'),
+                'gorivo': data.get('gorivo'),
+                'menjalnik': data.get('menjalnik'),
+                'motor': data.get('motor'),
+                'lokacija': data.get('lokacija'),
+                'published_date': data.get('published_date'),
+                'source': data.get('source'),
+                'category': data.get('category')
+            }
+            # Remove None values to keep JSON clean
+            metadata = {k: v for k, v in metadata.items() if v is not None}
+            
             c.execute("""
                 INSERT INTO ScrapedData (
                     url_id, content_id, ime_avta, cena, 
-                    leto_1_reg, prevozenih, gorivo, menjalnik, motor, 
-                    link, slika_url
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    link, slika_url, metadata
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (
                 url_id, 
-                data.get('content_id'), 
-                data.get('ime_avta'), 
-                data.get('cena'), 
-                data.get('leto_1_reg'), # Uporabljamo novo ime ključa
-                data.get('prevozenih'), 
-                data.get('gorivo'), 
-                data.get('menjalnik'),  # NOVO
-                data.get('motor'),      # NOVO
-                data.get('link'), 
-                data.get('slika_url')
+                content_id, 
+                ime_avta, 
+                cena, 
+                link, 
+                slika_url,
+                json.dumps(metadata, ensure_ascii=False)
             ))
             conn.commit()
         except Exception as e:
@@ -987,11 +1002,11 @@ class Database:
                 JOIN Users us ON t.telegram_id = us.telegram_id
                 WHERE us.is_active = 1
             )
-            SELECT url_id, url, url_bin, telegram_name, MIN(scan_interval) as min_interval,
+            SELECT url_id, url, url_bin, telegram_id, telegram_name, MIN(scan_interval) as min_interval,
                 MAX(CASE WHEN subscription_type = 'ULTRA' THEN 1 ELSE 0 END) as has_ultra
             FROM RankedTracking
             WHERE url_rank <= max_urls AND fail_count < 3
-            GROUP BY url_id
+            GROUP BY url_id, telegram_id
         """
         
         active_urls = c.execute(query).fetchall()
@@ -1021,7 +1036,8 @@ class Database:
                     'url_id': u_id, 
                     'url': row['url'], 
                     'url_bin': row['url_bin'], 
-                    'telegram_name': row['telegram_name']
+                    'telegram_name': row['telegram_name'],
+                    'telegram_id': row['telegram_id']
                 })
                 
         conn.close()
@@ -1332,6 +1348,22 @@ class Database:
         res = c.execute("SELECT * FROM MarketData WHERE content_id = ?", (normalized_id,)).fetchone()
         conn.close()
         return dict(res) if res else None
+
+    def get_scraped_data_by_content_id(self, content_id):
+        """Check if ad already exists in ScrapedData."""
+        conn = self.get_connection()
+        c = conn.cursor()
+        res = c.execute("SELECT id FROM ScrapedData WHERE content_id = ?", (content_id,)).fetchone()
+        conn.close()
+        return res is not None
+
+    def get_scraped_data_by_url_and_content(self, url_id, content_id):
+        """Check if ad already exists for this URL in ScrapedData."""
+        conn = self.get_connection()
+        c = conn.cursor()
+        res = c.execute("SELECT id FROM ScrapedData WHERE url_id = ? AND content_id = ?", (url_id, content_id)).fetchone()
+        conn.close()
+        return res is not None
 
     def insert_market_data(self, data, raw_snippet=None):
         """Shrani oglas v splošni arhiv trga za ML analitiko."""
