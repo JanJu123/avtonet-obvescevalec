@@ -144,7 +144,6 @@ class Scraper:
                     all_ads.append(ad)
                     seen_ids.add(ad_id)
             
-            print(f"[BOLHA] Page {current_page}: +{len(page_ads)} ads - STOPPING (first page with real ads found)")
             break  # STOP after first page with real ads
         
         return all_ads
