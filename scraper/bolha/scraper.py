@@ -133,7 +133,6 @@ class Scraper:
             
             # If no ads found yet, keep trying next page
             if not page_ads:
-                print(f"[BOLHA] Page {current_page}: no ads found, trying next page...")
                 time.sleep(random.uniform(config.FETCH_SLEEP_MIN, config.FETCH_SLEEP_MAX))
                 current_page += 1
                 continue
