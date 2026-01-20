@@ -228,6 +228,6 @@ if __name__ == "__main__":
     
     print("\n" + "="*70)
     print(f"💾 Saving {len(ads)} ads to ScrapedData...")
-    saved = scraper.save_ads_to_scraped_data(ads, url_id)
+    saved = scraper.save_ads_to_scraped_data(ads)
     print(f"✅ Saved {saved}/{len(ads)} ads to ScrapedData")
     print("="*70)
