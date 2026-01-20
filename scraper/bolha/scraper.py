@@ -223,8 +223,8 @@ if __name__ == "__main__":
         print(f"   ID: {ad['content_id']}")
         print(f"   Title: {ad['title']}")
         print(f"   Price: {ad['price']}")
-        print(f"   Source: {ad['source']}")
-        print(f"   Category: {ad['category']}")
+        print(f"   Location: {ad.get('location', 'N/A')}")
+        print(f"   Published: {ad.get('published_date', 'N/A')}")
     
     print("\n" + "="*70)
     print(f"💾 Saving {len(ads)} ads to ScrapedData...")

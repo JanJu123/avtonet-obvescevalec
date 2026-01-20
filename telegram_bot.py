@@ -225,7 +225,7 @@ async def add_url_command(update: telegram.Update, context: telegram.ext.Context
                     ads = await asyncio.to_thread(bolha_scraper.run_with_pagination, fixed_url)
                     print(f"[BOLHA ADD_URL] Found {len(ads) if ads else 0} ads")
                     if ads:
-                        saved = await asyncio.to_thread(bolha_scraper.save_ads_to_scraped_data, ads, url_id)
+                        saved = await asyncio.to_thread(bolha_scraper.save_ads_to_scraped_data, ads, new_url_id)
                         print(f"[BOLHA ADD_URL] Saved {saved} ads to ScrapedData")
                 
                 await sync_msg.edit_text(
