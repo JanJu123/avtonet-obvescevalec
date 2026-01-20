@@ -294,8 +294,14 @@ async def list_command(update: telegram.Update, context: telegram.ext.ContextTyp
     for u in urls:
         status_emoji = "✅" if u['active'] else "⏸️"
         
+        # Determine source based on URL
+        if "bolha.com" in u['url'].lower():
+            source = "Bolha.com"
+        else:
+            source = "Avto.net"
+        
         msg += f"{status_emoji} <b>ID: {u['url_id']}</b> - "
-        msg += f"<a href='{u['url']}'>Odpri iskanje na Avto.net</a>\n"
+        msg += f"<a href='{u['url']}'>Odpri iskanje na {source}</a>\n"
         
         if not u['active']:
             msg += "<i>(Zamrznjeno - nad limitom paketa)</i>\n"
