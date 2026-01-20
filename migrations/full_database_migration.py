@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
 """
-FULL DATABASE MIGRATION SCRIPT
+DATABASE MIGRATION SCRIPT
 ==============================
-This script performs BOTH:
-1. Schema migration (adds missing columns like url_id to MarketData)
-2. Timestamp format conversion (DD.MM.YYYY -> YYYY-MM-DD)
+This script performs schema migration:
+- Adds url_id column to MarketData (required for JSON schema migration)
 
 USE THIS ON VPS BEFORE RESTARTING BOT
 """
 
 import sqlite3
 import sys
-from datetime import datetime
 import shutil
 
 def backup_database(db_path):
@@ -23,16 +21,6 @@ def backup_database(db_path):
         return backup_path
     except Exception as e:
         print(f"❌ Backup failed: {e}")
-        return None
-
-def convert_timestamp(old_format):
-    """Convert DD.MM.YYYY HH:MM:SS to YYYY-MM-DD HH:MM:SS"""
-    if not old_format or old_format == '0':
-        return None
-    try:
-        dt = datetime.strptime(old_format, "%d.%m.%Y %H:%M:%S")
-        return dt.strftime("%Y-%m-%d %H:%M:%S")
-    except:
         return None
 
 def migrate_marketdata_schema(conn):
@@ -58,40 +46,10 @@ def migrate_marketdata_schema(conn):
     
     return True
 
-def migrate_timestamps(conn, table_name, date_columns):
-    """Migrate date columns in a table"""
-    cursor = conn.cursor()
-    
-    print(f"\n📅 Converting timestamps in {table_name}...")
-    
-    for col in date_columns:
-        try:
-            # Get all rows with the date column
-            cursor.execute(f"SELECT rowid, {col} FROM {table_name}")
-            rows = cursor.fetchall()
-            
-            converted = 0
-            for rowid, old_value in rows:
-                if old_value and old_value != '0':
-                    new_value = convert_timestamp(old_value)
-                    if new_value:
-                        cursor.execute(f"UPDATE {table_name} SET {col} = ? WHERE rowid = ?", (new_value, rowid))
-                        converted += 1
-            
-            conn.commit()
-            print(f"   ✅ {col}: Converted {converted} timestamps")
-            
-        except Exception as e:
-            print(f"   ❌ Error converting {col}: {e}")
-            conn.rollback()
-            return False
-    
-    return True
-
 def main(db_path):
-    """Run full migration"""
+    """Run migration"""
     print("=" * 60)
-    print("🚀 FULL DATABASE MIGRATION STARTING")
+    print("🚀 DATABASE MIGRATION STARTING")
     print("=" * 60)
     
     # 1. BACKUP
@@ -111,28 +69,6 @@ def main(db_path):
             print("❌ Schema migration failed")
             return 1
         
-        # 3. TIMESTAMP MIGRATION
-        print("\n3️⃣  MIGRATING TIMESTAMPS...")
-        migrations = {
-            'Users': ['joined_at'],
-            'Urls': ['created_at'],
-            'Tracking': ['created_at'],
-            'ScrapedData': ['created_at'],
-            'SentAds': ['sent_at'],
-            'UserActivity': ['timestamp'],
-            'MarketData': ['created_at', 'updated_at'],
-        }
-        
-        for table, columns in migrations.items():
-            cursor = conn.cursor()
-            cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
-            if cursor.fetchone():
-                if not migrate_timestamps(conn, table, columns):
-                    print(f"❌ Failed to migrate {table}")
-                    return 1
-            else:
-                print(f"⏭️  Table {table} does not exist, skipping...")
-        
         conn.close()
         
         print("\n" + "=" * 60)
@@ -143,9 +79,8 @@ def main(db_path):
         print(f"   Backup: {backup_path}")
         print(f"\n✨ Changes applied:")
         print(f"   • Added url_id column to MarketData")
-        print(f"   • Converted all timestamps to YYYY-MM-DD format")
         print(f"   • All existing data preserved")
-        print(f"\n🎉 Ready to restart bot on VPS!")
+        print(f"\n🎉 Ready for next step: migrate_to_json_schema.py")
         
         return 0
         
