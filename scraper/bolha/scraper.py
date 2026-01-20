@@ -194,9 +194,10 @@ class Scraper:
                     'price': ad.get('price'),
                     'link': ad.get('link'),
                     'snippet_data': json.dumps({
+                        'ime_avta': ad.get('title'),  # Title for display
                         'image_url': ad.get('image_url'),
-                        'location': ad.get('location'),
-                        'published_date': ad.get('published_date')
+                        'lokacija': ad.get('location'),  # Location for display
+                        'published_date': ad.get('published_date')  # Published time for display
                     }),
                     'url_id': url_id
                 }

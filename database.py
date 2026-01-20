@@ -1399,7 +1399,9 @@ class Database:
                 snippet_data_json = json.dumps(data.get('snippet_data'))
             else:
                 # Build from old Avtonet-style fields
+                # Include ime_avta (title) so it's available after snippet_data merge
                 snippet_data = {
+                    'ime_avta': data.get('ime_avta') or data.get('title'),
                     'leto_1_reg': data.get('leto_1_reg'),
                     'prevozenih': data.get('prevozenih'),
                     'gorivo': data.get('gorivo'),

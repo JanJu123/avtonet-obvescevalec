@@ -12,6 +12,9 @@ class DataManager():
         Queries MarketData (source of truth) for unsent ads.
         MarketData is the permanent archive - single source of truth.
         Dedup via SentAds prevents respamming to users.
+        
+        For Bolha ads: all relevant data (ime_avta, lokacija, published_date, image_url)
+        is in snippet_data JSON - this method merges it into the result.
         """
         if not filter_url_ids:
             return []
@@ -45,13 +48,18 @@ class DataManager():
         result = []
         for row in rows:
             row_dict = dict(row)
-            # Parse snippet_data JSON and merge into row
+            # Parse snippet_data JSON and merge ALL fields into row
+            # This ensures Bolha ads have ime_avta, lokacija, published_date available
             if row_dict.get('snippet_data'):
                 try:
                     snippet = json.loads(row_dict['snippet_data'])
-                    row_dict.update(snippet)
+                    # Merge all snippet_data fields into row_dict
+                    # This overwrites None values with actual data from snippet
+                    for key, value in snippet.items():
+                        if value is not None:  # Only add non-None values
+                            row_dict[key] = value
                 except:
-                    pass  # If JSON parse fails, just skip
+                    pass  # If JSON parse fails, continue with what we have
             result.append(row_dict)
         
         return result
@@ -60,10 +68,12 @@ class DataManager():
         from datetime import datetime
         
         # --- PAMETNO ČIŠČENJE ---
+        # After merge, all fields from snippet_data are directly available
+        # Works for both Avtonet (ime_avta from main field) and Bolha (ime_avta from snippet_data)
         ime = html.escape(str(oglas.get('ime_avta', 'Neznano')))
         
         # Cena (če manjka €, ga dodaj) — varovalka za None/številke
-        raw_cena = oglas.get('cena')
+        raw_cena = oglas.get('cena') or oglas.get('price')
         if not raw_cena:
             raw_cena = 'Po dogovoru'
         cena = str(raw_cena).replace('\xa0', ' ').strip()
@@ -81,7 +91,7 @@ class DataManager():
         menjalnik = html.escape(str(oglas.get('menjalnik', 'Neznano')))
         motor = html.escape(str(oglas.get('motor', 'Neznano')))
         
-        # For Bolha: location and publish time
+        # For Bolha: location and publish time (from merged snippet_data)
         lokacija = oglas.get('lokacija', '').strip() if oglas.get('lokacija') else None
         
         # Format publish date to Slovenian format (DD.MM.YYYY)
