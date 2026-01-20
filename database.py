@@ -1383,6 +1383,12 @@ class Database:
                 else:
                     content_id = f"an_{content_id}"
             
+            # Check which schema version VPS has (old vs clean)
+            c.execute("PRAGMA table_info(MarketData)")
+            columns = [col[1] for col in c.fetchall()]
+            has_snippet_data = 'snippet_data' in columns
+            has_ime_avta = 'ime_avta' in columns
+            
             # Build snippet_data JSON
             # If snippet_data is already provided (e.g., from Bolha), use it directly
             if isinstance(data.get('snippet_data'), str):
@@ -1402,22 +1408,57 @@ class Database:
                 }
                 snippet_data_json = json.dumps(snippet_data)
             
-            c.execute("""
-                INSERT OR IGNORE INTO MarketData (
-                    content_id, source, category, title, price, link,
-                    snippet_data, enriched, enriched_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                content_id,
-                data.get('source', 'avtonet'),
-                data.get('category', 'car'),
-                data.get('ime_avta') or data.get('title'),
-                data.get('cena') or data.get('price'),
-                data.get('link'),
-                snippet_data_json,
-                data.get('enriched', 0),
-                data.get('enriched_json')
-            ))
+            # Insert based on which schema version exists
+            if has_snippet_data and not has_ime_avta:
+                # CLEAN schema (after clean_marketdata_schema.py migration)
+                # Normalize field names from both Avtonet (ime_avta, cena) and Bolha (title, price)
+                price = data.get('price') or data.get('cena')
+                c.execute("""
+                    INSERT OR IGNORE INTO MarketData (
+                        content_id, source, category, price, link,
+                        snippet_data, enriched, enriched_json, url_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    content_id,
+                    data.get('source', 'avtonet'),
+                    data.get('category', 'car'),
+                    price,
+                    data.get('link'),
+                    snippet_data_json,
+                    data.get('enriched', 0),
+                    data.get('enriched_json'),
+                    data.get('url_id')
+                ))
+            else:
+                # OLD schema (before clean_marketdata_schema.py)
+                c.execute("""
+                    INSERT OR IGNORE INTO MarketData (
+                        content_id, ime_avta, cena, link, 
+                        leto_1_reg, prevozenih, gorivo, menjalnik, motor,
+                        enriched, enriched_json, url_id, source, category
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    content_id,
+                    data.get('ime_avta') or data.get('title'),
+                    data.get('cena') or data.get('price'),
+                    data.get('link'),
+                    data.get('leto_1_reg'),
+                    data.get('prevozenih'),
+                    data.get('gorivo'),
+                    data.get('menjalnik'),
+                    data.get('motor'),
+                    data.get('enriched', 0),
+                    data.get('enriched_json'),
+                    data.get('url_id'),
+                    data.get('source', 'avtonet'),
+                    data.get('category', 'car')
+                ))
+            
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"❌ [DB ERROR] MarketData insert: {e}")
+            conn.close()
             conn.commit()
         except Exception as e:
             print(f"❌ [DB ERROR] MarketData insert: {e}")
