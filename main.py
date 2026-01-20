@@ -155,7 +155,8 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE, sen
     for oglas in novi_oglasi:
         chat_id = oglas['target_user_id']
         tekst = manager.format_telegram_message(oglas)
-        slika = oglas.get("slika_url")
+        # Try both slika_url (Avtonet) and image_url (Bolha)
+        slika = oglas.get("slika_url") or oglas.get("image_url")
 
         try:
             # --- VARNO POŠILJANJE S FALLBACKOM ---
