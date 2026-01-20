@@ -143,11 +143,11 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE, sen
         print(f"{B_BLUE}[{get_time()}] INFO - Ni novih oglasov za te skene.{B_END}")
         return
 
-    # Mark ads as sent even during silent check (prevent respam on next cycle)
+    # On startup, mark as sent but don't send notifications
     if not send_notifications:
         for oglas in novi_oglasi:
             db.add_sent_ad(oglas['target_user_id'], oglas['content_id'])
-        print(f"{B_YELLOW}[{get_time()}] STARTUP - Silent check complete ({len(novi_oglasi)} new ads found, marked as sent, notifications skipped).{B_END}")
+        print(f"{B_YELLOW}[{get_time()}] STARTUP - Silent check: {len(novi_oglasi)} ads indexed and marked for this user, notifications skipped.{B_END}")
         return
 
     print(f"{B_YELLOW}[{get_time()}] SEND - Pošiljam {len(novi_oglasi)} novih obvestil...{B_END}")
