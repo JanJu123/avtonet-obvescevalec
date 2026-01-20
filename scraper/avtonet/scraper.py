@@ -344,8 +344,8 @@ class Scraper:
                                     # DODAMO V REZULTATE ZA UPORABNIKA
                                     final_results.append(ad_data)
                                     
-                                    # TAKOJ SHRANIMO V MARKET DATA (Tukaj je zdaj varno!)
-                                    self.db.insert_market_data(ad_data, orig['text'])
+                                    # NOTE: MarketData insert commented out - use only ScrapedData
+                                    # self.db.insert_market_data(ad_data, orig['text'])
                         else:
                             print(f"[{get_time()}] ⚠️ AI odpovedal, preklop na manual.")
 
@@ -358,8 +358,8 @@ class Scraper:
                         manual_data = self._manual_parse_row(item['row_soup'], item['id'], item['link'], img_url)
                         
                         final_results.append(manual_data)
-                        # Shranimo tudi ročno prebrane podatke v arhiv
-                        self.db.insert_market_data(manual_data, item['text'])
+                        # NOTE: MarketData insert commented out - use only ScrapedData
+                        # self.db.insert_market_data(manual_data, item['text'])
 
                 # --- VPIS V BAZO ZA TELEGRAM OBVESTILA ---
                 for data in final_results:
