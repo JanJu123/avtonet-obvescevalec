@@ -77,24 +77,15 @@ class AIHandler:
             self.call_count_today += 1
             content = response.choices[0].message.content
             
-            # DEBUG: Print raw AI response
-            print(f"\n[AI DEBUG] Raw response:\n{content}\n")
-            
             data = json.loads(content)
-            
-            # DEBUG: Print parsed data
-            print(f"[AI DEBUG] Parsed JSON:\n{json.dumps(data, indent=2, ensure_ascii=False)}\n")
             
             # Normalizacija odgovora (da vedno dobimo seznam)
             if isinstance(data, dict):
                 # Če AI zapakira seznam v ključ (npr. "ads": [...])
                 for key in data:
                     if isinstance(data[key], list):
-                        print(f"[AI DEBUG] Found list under key: {key}")
                         return data[key]
-                print(f"[AI DEBUG] Returning single dict as list")
                 return [data]
-            print(f"[AI DEBUG] Returning data as-is (already list)")
             return data
 
         except Exception as e:

@@ -122,7 +122,6 @@ class Scraper:
         
         while current_page <= max_pages:
             page_url = self._with_page(base_url, current_page)
-            print(f"[BOLHA] Fetching page {current_page}: {page_url}")
             
             html, bytes_used, status_code = self.get_latest_offers(page_url)
             if not html:

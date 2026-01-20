@@ -106,7 +106,7 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE, sen
         async def process_bolha_url(url_entry):
             bolha_scraper = BolhaScraper(db)
             try:
-                print(f"[{get_time()}] BOLHA SCAN - URL ID {url_entry['url_id']} ({url_entry.get('telegram_name', 'Neznan')})...")
+                print(f"{B_CYAN}[{get_time()}] BOLHA SCAN - URL ID {url_entry['url_id']} ({url_entry.get('telegram_name', 'Neznan')})...{B_END}")
                 ads = await asyncio.to_thread(bolha_scraper.run_with_pagination, url_entry['url'])
                 if ads:
                     print(f"[{get_time()}] BOLHA - Najdeno {len(ads)} oglasov, shranjevanje...")

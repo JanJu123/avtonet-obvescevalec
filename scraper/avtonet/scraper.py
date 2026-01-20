@@ -247,7 +247,7 @@ class Scraper:
                 else:
                     final_url = entry['url']
 
-                print(f"{B_CYAN}[{get_time()}] SCAN - URL ID {u_id} (Uporabnik: {u_name})...{B_END}")
+                print(f"{B_CYAN}[{get_time()}] AVTONET SCAN - URL ID {u_id} ({u_name})...{B_END}")
                 
                 html, bytes_used, status_code = self.get_latest_offers(final_url)
                 
@@ -293,7 +293,7 @@ class Scraper:
                         existing_ad = self.db.get_market_data_by_id(content_id)
                         
                         if existing_ad:
-                            print(f"{B_GREEN}[{get_time()}] ♻️ [REUSE] Oglas {content_id} najden v arhivu. Preskakujem AI.{B_END}")
+                            # Already in archive, reuse data (skip AI processing)
                             # Pripravimo sliko in link iz trenutnega row-a (da sta vedno sveža)
                             img_tag = row.find('img')
                             existing_ad['slika_url'] = img_tag.get('data-src') or img_tag.get('src') if img_tag else None
@@ -315,7 +315,6 @@ class Scraper:
                     self.db.log_scraper_run(u_id, 200, 0, round(time.time() - start_time, 2), bytes_used, "Initial Sync")
                     continue
 
-                # --- AI PROCESIRANJE (Batching) ---
                 # --- AI PROCESIRANJE ---
                 if ads_to_ai_batch:
                     # Flood Protection (max 5)
@@ -325,7 +324,7 @@ class Scraper:
                         ads_to_ai_batch = ads_to_ai_batch[:5]
 
                     if config.USE_AI:
-                        print(f"{B_YELLOW}[{get_time()}] AI - Obdelujam {len(ads_to_ai_batch)} oglasov za {u_name}...{B_END}")
+                        print(f"{B_YELLOW}[{get_time()}] 🤖 AI - Sending {len(ads_to_ai_batch)} ads for processing...{B_END}")
                         ai_results = self.ai.extract_ads_batch(ads_to_ai_batch)
                         
                         if ai_results:
