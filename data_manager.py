@@ -9,9 +9,9 @@ class DataManager():
 
     def check_new_offers(self, filter_url_ids=None):
         """
-        Poišče nove oglase iz OBEH tabel (ScrapedData za Avtonet in MarketData za Bolha).
-        Če je podan filter_url_ids, gleda samo te URL-je.
-        Sortirani po created_at (najnovejši naprej).
+        Queries MarketData (source of truth) for unsent ads.
+        MarketData is the permanent archive - single source of truth.
+        Dedup via SentAds prevents respamming to users.
         """
         if not filter_url_ids:
             return []
@@ -20,21 +20,21 @@ class DataManager():
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
 
-        # Priprava vprašajev za SQL ( ?, ?, ? )
+        # Prepare SQL placeholders
         placeholders = ', '.join(['?'] * len(filter_url_ids))
         
-        # Query ScrapedData (filtered by user's URLs) for unsent ads
+        # Query MarketData (source of truth) for unsent ads
         query = f"""
-            SELECT sd.*, t.telegram_id as target_user_id
-            FROM ScrapedData sd
-            JOIN Tracking t ON sd.url_id = t.url_id
-            WHERE sd.url_id IN ({placeholders})
+            SELECT m.*, t.telegram_id as target_user_id
+            FROM MarketData m
+            JOIN Tracking t ON m.url_id = t.url_id
+            WHERE m.url_id IN ({placeholders})
             AND NOT EXISTS (
                 SELECT 1 FROM SentAds sa 
                 WHERE sa.telegram_id = t.telegram_id 
-                AND sa.content_id = sd.content_id
+                AND sa.content_id = m.content_id
             )
-            ORDER BY sd.created_at DESC
+            ORDER BY m.created_at DESC
         """
         
         params = filter_url_ids
@@ -45,11 +45,11 @@ class DataManager():
         result = []
         for row in rows:
             row_dict = dict(row)
-            # Parse metadata JSON and merge into row
-            if row_dict.get('metadata'):
+            # Parse snippet_data JSON and merge into row
+            if row_dict.get('snippet_data'):
                 try:
-                    metadata = json.loads(row_dict['metadata'])
-                    row_dict.update(metadata)
+                    snippet = json.loads(row_dict['snippet_data'])
+                    row_dict.update(snippet)
                 except:
                     pass  # If JSON parse fails, just skip
             result.append(row_dict)
