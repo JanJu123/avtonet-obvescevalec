@@ -66,48 +66,47 @@ class DataManager():
 
     def format_telegram_message(self, oglas):
         from datetime import datetime
+        import html
         
-        # --- PAMETNO ČIŠČENJE ---
-        # After merge, all fields from snippet_data are directly available
-        # Works for both Avtonet (ime_avta from main field) and Bolha (ime_avta from snippet_data)
-        ime = html.escape(str(oglas.get('ime_avta', 'Neznano')))
+        # --- EXTRACT FIELDS ---
+        ime = html.escape(str(oglas.get('ime_avta') or oglas.get('title', 'Neznano')))
         
-        # Cena (če manjka €, ga dodaj) — varovalka za None/številke
+        # Cena
         raw_cena = oglas.get('cena') or oglas.get('price')
         if not raw_cena:
             raw_cena = 'Po dogovoru'
         cena = str(raw_cena).replace('\xa0', ' ').strip()
         if any(char.isdigit() for char in cena) and '€' not in cena:
             cena += " €"
-            
-        leto = html.escape(str(oglas.get('leto_1_reg', 'Neznano')))
         
-        # Kilometri (če manjka km, ga dodaj)
-        km = str(oglas.get('prevozenih', 'Neznano')).strip()
-        if any(char.isdigit() for char in km) and 'km' not in km.lower() and km != "Neznano":
-            km += " km"
+        # All other fields
+        leto = oglas.get('leto_1_reg')
+        km = oglas.get('prevozenih')
+        gorivo = oglas.get('gorivo')
+        menjalnik = oglas.get('menjalnik')
+        motor = oglas.get('motor')
+        lokacija = oglas.get('lokacija')
+        published_date_raw = oglas.get('published_date')
+        link = oglas.get('link', 'https://www.avto.net')
         
-        gorivo = html.escape(str(oglas.get('gorivo', 'Neznano'))).replace(' motor', '')
-        menjalnik = html.escape(str(oglas.get('menjalnik', 'Neznano')))
-        motor = html.escape(str(oglas.get('motor', 'Neznano')))
+        # Format km
+        if km and str(km) not in ['None', 'null', 'Neznano']:
+            km_str = str(km).strip()
+            if 'km' not in km_str.lower():
+                km_str += " km"
+        else:
+            km_str = None
         
-        # For Bolha: location and publish time (from merged snippet_data)
-        lokacija = oglas.get('lokacija', '').strip() if oglas.get('lokacija') else None
-        
-        # Format publish date to Slovenian format (DD.MM.YYYY)
-        published_date_raw = oglas.get('published_date', '').strip() if oglas.get('published_date') else None
+        # Format published date
         published_date = None
         if published_date_raw:
             try:
-                # Parse ISO format: 2026-01-20T18:34:59+01:00
                 dt = datetime.fromisoformat(published_date_raw.replace('Z', '+00:00'))
                 published_date = dt.strftime('%d.%m.%Y')
             except:
-                published_date = published_date_raw  # Fallback to raw if parsing fails
+                published_date = published_date_raw
         
-        link = oglas.get('link', 'https://www.avto.net')
-
-        # Sestava sporočila
+        # --- BUILD MESSAGE ---
         msg = (
             f"<b>NOV OGLAS NAJDEN!</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
@@ -115,26 +114,30 @@ class DataManager():
             f"Cena: <b>{cena}</b>\n"
         )
         
-        # Add car-specific fields (Avtonet)
-        if leto != 'Neznano' or km != 'Neznano' or gorivo != 'Neznano':
-            msg += (
-                f"Letnik: <b>{leto}</b>\n"
-                f"Kilometri: <b>{km}</b>\n"
-                f"Gorivo: <b>{gorivo}</b>\n"
-                f"Menjalnik: <b>{menjalnik}</b>\n"
-                f"Motor: <b>{motor}</b>\n\n"
-            )
+        # Add all available fields (smart filtering - only show non-empty)
+        fields = [
+            ('Letnik', leto),
+            ('Prevozenih', km_str),
+            ('Gorivo', gorivo),
+            ('Menjalnik', menjalnik),
+            ('Motor', motor),
+            ('Lokacija', lokacija),
+            ('Objavljeno', published_date),
+        ]
         
-        # Add Bolha-specific fields (location, publish time)
-        if lokacija or published_date:
-            if lokacija:
-                msg += f"Lokacija: <b>{html.escape(lokacija)}</b>\n"
-            if published_date:
-                msg += f"Objavljeno: <b>{published_date}</b>\n"
+        # Only show fields that have actual values
+        shown_any = False
+        for label, value in fields:
+            if value and str(value) not in ['None', 'null', 'Neznano', '']:
+                msg += f"\n{label}: <b>{html.escape(str(value))}</b>"
+                shown_any = True
+        
+        if shown_any:
             msg += "\n"
         
-        msg += f"🔗 <a href='{link}'>KLIKNI ZA OGLED OGLASA</a>"
+        msg += f"\n🔗 <a href='{link}'>KLIKNI ZA OGLED OGLASA</a>"
         return msg
+    
     
 
 

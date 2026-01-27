@@ -344,6 +344,8 @@ class Scraper:
                                     img_tag = orig['row_soup'].find('img')
                                     ad_data['slika_url'] = img_tag.get('data-src') or img_tag.get('src') if img_tag else None
                                     
+                                    ad_data['url_id'] = u_id
+
                                     # DODAMO V REZULTATE ZA UPORABNIKA
                                     final_results.append(ad_data)
                                     
@@ -360,6 +362,9 @@ class Scraper:
                         img_url = img_tag.get('data-src') or img_tag.get('src') if img_tag else None
                         manual_data = self._manual_parse_row(item['row_soup'], item['id'], item['link'], img_url)
                         
+                        manual_data['source'] = 'avtonet'
+                        manual_data['url_id'] = u_id  # Save which URL found this ad
+
                         final_results.append(manual_data)
                         # Save to MarketData archive
                         self.db.insert_market_data(manual_data, item['text'])
