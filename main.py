@@ -336,7 +336,7 @@ def main():
     # Preverja in obvesti Uporabnika če se njegov paket nasledni dan zaključi
     application.job_queue.run_repeating(check_subscription_expirations, interval=3600, first=60)
 
-    print("AvtoNet Tracker Bot je zagnan in čaka na nove oglase...")
+    print("MarketPulse Bot je zagnan in čaka na nove oglase...")
     
     # Zaženi bota
     application.run_polling()

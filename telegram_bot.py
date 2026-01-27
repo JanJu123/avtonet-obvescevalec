@@ -85,7 +85,7 @@ async def start_command(update: telegram.Update, context: telegram.ext.ContextTy
         # Sporočilo za novega uporabnika
         msg = (
             f"Pozdravljen, <b>{safe_name}</b>! 👋\n\n"
-            "Sem tvoj osebni Avto.net obveščevalec. Ker si nov, sem ti pravkar "
+            "Sem MarketPulse - tvoj osebni asistent za sledenje novim oglasom.\n Ker si nov, sem ti pravkar "
             "avtomatsko aktiviral <b>3-dnevni BREZPLAČNI PREIZKUS (TRIAL)</b>! 🎉\n\n"
             "<b>Tvoj paket vključuje:</b>\n"
             "• 1 URL za sledenje\n"
