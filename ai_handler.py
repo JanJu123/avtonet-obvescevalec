@@ -27,10 +27,10 @@ class AIHandler:
         for idx, item in enumerate(raw_snippets):
             combined_text += f"OGLAS #{idx+1} [ID:{item['id']}]: {item['text']}\n---\n"
         
-        # DEBUG: Show what we're sending
-        print(f"\n[AI DEBUG] Sending {len(raw_snippets)} ads to AI:")
-        print(f"Combined text length: {len(combined_text)} chars")
-        print(f"First 500 chars:\n{combined_text[:500]}\n")
+        # # DEBUG: Show what we're sending
+        # print(f"\n[AI DEBUG] Sending {len(raw_snippets)} ads to AI:")
+        # print(f"Combined text length: {len(combined_text)} chars")
+        # print(f"First 500 chars:\n{combined_text[:500]}\n")
 
         prompt = f"""
         STREŽNIŠKO NAVODILO: Si robotski ekstraktor podatkov za avtomobilske oglase. 

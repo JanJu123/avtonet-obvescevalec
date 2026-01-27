@@ -28,17 +28,17 @@ class DataManager():
         
         # Query MarketData (source of truth) for unsent ads
         query = f"""
-            SELECT m.*, t.telegram_id as target_user_id
-            FROM MarketData m
-            JOIN Tracking t ON m.url_id = t.url_id
-            WHERE m.url_id IN ({placeholders})
-            AND NOT EXISTS (
-                SELECT 1 FROM SentAds sa 
-                WHERE sa.telegram_id = t.telegram_id 
-                AND sa.content_id = m.content_id
-            )
-            ORDER BY m.created_at DESC
-        """
+        SELECT s.*, t.telegram_id as target_user_id
+        FROM ScrapedData s
+        JOIN Tracking t ON s.url_id = t.url_id
+        WHERE s.url_id IN ({placeholders})
+        AND NOT EXISTS (
+            SELECT 1 FROM SentAds sa 
+            WHERE sa.telegram_id = t.telegram_id 
+            AND sa.content_id = s.content_id
+        )
+        ORDER BY s.created_at DESC
+    """
         
         params = filter_url_ids
         rows = c.execute(query, params).fetchall()
