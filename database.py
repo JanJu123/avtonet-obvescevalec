@@ -68,7 +68,7 @@ class Database:
             cena TEXT,
             link TEXT,
             slika_url TEXT,
-            metadata JSON,        -- Flexible storage for any additional fields
+            snippet_data JSON,        -- Flexible storage for any additional fields
             created_at DATETIME DEFAULT (strftime('%d.%m.%Y %H:%M:%S', 'now', 'localtime')),
             FOREIGN KEY (url_id) REFERENCES Urls (url_id)
         )
@@ -159,8 +159,8 @@ class Database:
             link = data.get('link')
             slika_url = data.get('slika_url')
             
-            # Everything else goes to JSON metadata (flexible, no schema changes needed)
-            metadata = {
+            # Everything else goes to JSON snippet_data (flexible, no schema changes needed)
+            snippet_data = {
                 'leto_1_reg': data.get('leto_1_reg'),
                 'prevozenih': data.get('prevozenih'),
                 'gorivo': data.get('gorivo'),
@@ -172,12 +172,12 @@ class Database:
                 'category': data.get('category')
             }
             # Remove None values to keep JSON clean
-            metadata = {k: v for k, v in metadata.items() if v is not None}
+            snippet_data = {k: v for k, v in snippet_data.items() if v is not None}
             
             c.execute("""
                 INSERT INTO ScrapedData (
                     url_id, content_id, ime_avta, cena, 
-                    link, slika_url, metadata
+                    link, slika_url, snippet_data
                 ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (
                 url_id, 
@@ -186,7 +186,7 @@ class Database:
                 cena, 
                 link, 
                 slika_url,
-                json.dumps(metadata, ensure_ascii=False)
+                json.dumps(snippet_data, ensure_ascii=False)
             ))
             conn.commit()
         except Exception as e:

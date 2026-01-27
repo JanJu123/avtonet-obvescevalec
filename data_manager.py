@@ -44,7 +44,7 @@ class DataManager():
         rows = c.execute(query, params).fetchall()
         conn.close()
         
-        # Merge JSON metadata back into each row
+        # Merge JSON snippet_data back into each row
         result = []
         for row in rows:
             row_dict = dict(row)
