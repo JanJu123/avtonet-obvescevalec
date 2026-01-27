@@ -274,7 +274,7 @@ class Scraper:
                         if link_tag:
                             href = link_tag.get('href', '')
                             match = re.search(r'id=(\d+)', href)
-                            if match: self.db.bulk_add_sent_ads(u_id, [match.group(1)])
+                            if match: self.db.bulk_add_sent_ads(u_id, [f"an_{match.group(1)}"])
                         continue
                     
                     link_tag = row.find('a', class_='stretched-link')
@@ -282,7 +282,7 @@ class Scraper:
                     href = link_tag.get('href', '')
                     match = re.search(r'id=(\d+)', href)
                     if not match: continue
-                    content_id = str(match.group(1))
+                    content_id = f"an_{match.group(1)}"
                     all_ids_on_page.append(content_id)
 
                     # Če je oglas nov za tega uporabnika...
@@ -330,6 +330,10 @@ class Scraper:
                         if ai_results:
                             for ad_data in ai_results:
                                 ad_id = str(ad_data.get('content_id') or ad_data.get('id') or ad_data.get('ID'))
+
+                                if not ad_id.startswith('an_'):
+                                    ad_id = f"an_{ad_id}"
+
                                 # Poiščemo pripadajoč originalen snippet
                                 orig = next((x for x in ads_to_ai_batch if str(x['id']) == ad_id), None)
                                 

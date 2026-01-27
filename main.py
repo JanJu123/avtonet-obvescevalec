@@ -344,3 +344,6 @@ def main():
 if __name__ == "__main__":
     main()
 
+# Name: MarketPulse
+# Spremeni format v db da bo pravilen in se bo pravilno sortiral ko kliknem na created_at, problem ker se sjranjuje v string, oz se je in je se ostalo od prej
+# Spremeni ime bota v MarketPulse in broadcasti drugim da bodo vedeli, 
