@@ -3,6 +3,8 @@ import telegram
 import telegram.ext
 from database import Database
 from scraper.avtonet.scraper import Scraper
+from scraper.bolha.scraper import Scraper as BolhaScraper
+from scraper.nepremicnine.scraper import Scraper as NepremicnineScraper
 from data_manager import DataManager
 from telegram.ext import CallbackQueryHandler
 from scraper.avtonet.master_crawler import run_master_crawler_once
@@ -85,12 +87,15 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE, sen
     # Ločimo URL-je po virih
     avtonet_urls = [u for u in pending_urls if "avto.net" in u['url'].lower()]
     bolha_urls = [u for u in pending_urls if "bolha.com" in u['url'].lower()]
+    nepremicnine_urls = [u for u in pending_urls if "nepremicnine.net" in u['url'].lower()]
     
     # Log which URLs are pending
     if avtonet_urls:
         print(f"{B_YELLOW}[{get_time()}] AVTONET - {len(avtonet_urls)} URL(s) pending{B_END}")
     if bolha_urls:
         print(f"{B_YELLOW}[{get_time()}] BOLHA - {len(bolha_urls)} URL(s) pending{B_END}")
+    if nepremicnine_urls:
+        print(f"{B_YELLOW}[{get_time()}] NEPREMICNINE - {len(nepremicnine_urls)} URL(s) pending{B_END}")
     
     manager = DataManager(db)
 
@@ -101,7 +106,6 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE, sen
     
     # Bolha obdelava (paralelno za vsak URL)
     if bolha_urls:
-        from scraper.bolha.scraper import Scraper as BolhaScraper
         
         async def process_bolha_url(url_entry):
             bolha_scraper = BolhaScraper(db)
@@ -116,6 +120,34 @@ async def check_for_new_ads(context: telegram.ext.ContextTypes.DEFAULT_TYPE, sen
         
         # Izvrši vse Bolha URL-je paralelno
         await asyncio.gather(*[process_bolha_url(url) for url in bolha_urls]) 
+
+    # Nepremičnine obdelava (paralelno za vsak URL)
+    if nepremicnine_urls:
+        async def process_nepremicnine_url(url_entry):
+            nepremicnine_scraper = NepremicnineScraper(db)
+            try:
+                print(f"{B_CYAN}[{get_time()}] NEPREMICNINE SCAN - URL ID {url_entry['url_id']} ({url_entry.get('telegram_name', 'Neznan')})...{B_END}")
+                html, bytes_used, status_code = await asyncio.to_thread(
+                    nepremicnine_scraper.get_latest_offers, url_entry['url']
+                )
+                
+                if status_code == 200 and html:
+                    ads = nepremicnine_scraper.extract_all_ads(html)
+                    if ads:
+                        print(f"[{get_time()}] NEPREMICNINE - Najdeno {len(ads)} oglasov, shranjevanje...")
+                        saved = await asyncio.to_thread(
+                            nepremicnine_scraper.save_ads_to_scraped_data, ads, url_entry['url_id']
+                        )
+                        print(f"[{get_time()}] NEPREMICNINE - Shranjeno {saved} novih oglasov")
+                    else:
+                        print(f"[{get_time()}] NEPREMICNINE - Ni najdenih oglasov")
+                else:
+                    print(f"[{get_time()}] ❌ NEPREMICNINE fetch napaka (HTTP {status_code})")
+            except Exception as e:
+                print(f"[{get_time()}] ❌ NEPREMICNINE napaka za URL ID {url_entry['url_id']}: {e}")
+        
+        # Izvrši vse Nepremičnine URL-je paralelno
+        await asyncio.gather(*[process_nepremicnine_url(url) for url in nepremicnine_urls])
     
     failed_ones = db.get_newly_failed_urls()
     for f in failed_ones:
@@ -343,7 +375,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# Name: MarketPulse
-# Spremeni format v db da bo pravilen in se bo pravilno sortiral ko kliknem na created_at, problem ker se sjranjuje v string, oz se je in je se ostalo od prej
-# Spremeni ime bota v MarketPulse in broadcasti drugim da bodo vedeli, 

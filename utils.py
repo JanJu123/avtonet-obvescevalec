@@ -197,6 +197,39 @@ def fix_bolha_url(url):
         print(f"Error fixing Bolha URL: {e}")
         return url
 
+def fix_nepremicnine_url(url):
+    """
+    Popravi Nepremičnine.net URL - odstrani nepotrebne parametre in normalizira format.
+    """
+    url = url.strip().strip('<>')
+    
+    try:
+        # Razstavimo URL
+        u = urllib.parse.urlparse(url)
+        
+        # Nepremičnine.net običajno ne uporablja query parametrov za iskanje
+        # URL format: https://www.nepremicnine.net/oglasi-{action}/{region}/{type}/
+        # Enostavno vrnemo čist URL brez query parametrov
+        
+        # Ohranimo samo path (brez parametrov)
+        fixed_url = urllib.parse.urlunparse((
+            u.scheme or 'https',
+            u.netloc or 'www.nepremicnine.net',
+            u.path,
+            '',  # No params
+            '',  # No query
+            ''   # No fragment
+        ))
+        
+        # Poskrbimo, da se path konča z /
+        if not fixed_url.endswith('/'):
+            fixed_url += '/'
+        
+        return fixed_url
+    except Exception as e:
+        print(f"Error fixing Nepremičnine URL: {e}")
+        return url
+
 
 async def send_message_smart(context, chat_id, text, parse_mode="HTML", **kwargs):
     """

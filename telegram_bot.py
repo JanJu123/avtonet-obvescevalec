@@ -122,15 +122,17 @@ async def add_url_command(update: telegram.Update, context: telegram.ext.Context
     t_id = update.effective_user.id
     t_name = update.effective_user.first_name
 
+
     # 1. Validacija linka
     is_avtonet = "avto.net" in raw_url.lower() and "results.asp" in raw_url.lower()
     is_bolha = "bolha.com" in raw_url.lower()
-    
-    if not (is_avtonet or is_bolha):
+    is_nepremicnine = "nepremicnine.net" in raw_url.lower() and "/oglasi-" in raw_url.lower()
+
+    if not (is_avtonet or is_bolha or is_nepremicnine):
         db.log_user_activity(t_id, "/add_url", f"ZAVRNJENO: Neveljaven link")
         await msg_obj.reply_text(
             "❌ <b>NAPAKA: To ni veljaven iskalni link!</b>\n\n"
-            "Pojdi na Avto.net ali Bolha.com, nastavi filtre in kopiraj <b>celoten</b> naslov iz brskalnika.",
+            "Pojdi na Avto.net, Bolha.com ali Nepremičnine.net, nastavi filtre in kopiraj <b>celoten</b> naslov iz brskalnika.",
             parse_mode="HTML"
         )
         return
@@ -140,6 +142,8 @@ async def add_url_command(update: telegram.Update, context: telegram.ext.Context
         fixed_url = utils.fix_avtonet_url(raw_url)
     elif is_bolha:
         fixed_url = utils.fix_bolha_url(raw_url)
+    elif is_nepremicnine:
+        fixed_url = utils.fix_nepremicnine_url(raw_url)
     else:
         fixed_url = raw_url
 
@@ -188,6 +192,20 @@ async def add_url_command(update: telegram.Update, context: telegram.ext.Context
                     await validation_msg.edit_text(f"✅ Najdeno {len(test_ads)} oglasov...")
             else:
                 await validation_msg.delete()
+
+        elif is_nepremicnine:
+            from scraper.nepremicnine.scraper import Scraper as NepremicnineScraper
+            test_scraper = NepremicnineScraper(db)
+            test_html, _, test_status = test_scraper.get_latest_offers(fixed_url)
+            if test_status == 200:
+                test_ads = test_scraper.extract_all_ads(test_html)
+                if len(test_ads) > 0:
+                    await validation_msg.edit_text(f"✅ Najdeno {len(test_ads)} nepremičnin...")
+                else:
+                    await validation_msg.edit_text("⚠️ URL OK, vendar trenutno ni oglasov...")
+            else:
+                await validation_msg.edit_text(f"⚠️ Preverjanje ni uspelo (HTTP {test_status}), nadaljujem...")
+
         # Za Avtonet je logika že implementirana, zato preskoči
     except Exception as e:
         print(f"URL validation error: {e}")
@@ -227,6 +245,17 @@ async def add_url_command(update: telegram.Update, context: telegram.ext.Context
                     if ads:
                         saved = await asyncio.to_thread(bolha_scraper.save_ads_to_scraped_data, ads, new_url_id)
                         print(f"[BOLHA ADD_URL] Saved {saved} ads to ScrapedData")
+                elif is_nepremicnine:
+                    from scraper.nepremicnine.scraper import Scraper as NepremicnineScraper
+                    nepremicnine_scraper = NepremicnineScraper(db)
+                    print(f"[NEPREMICNINE ADD_URL] Scraping: {fixed_url}")
+                    html, _, status = await asyncio.to_thread(nepremicnine_scraper.get_latest_offers, fixed_url)
+                    if status == 200:
+                        ads = nepremicnine_scraper.extract_all_ads(html)
+                        print(f"[NEPREMICNINE ADD_URL] Found {len(ads)} properties")
+                        if ads:
+                            saved = await asyncio.to_thread(nepremicnine_scraper.save_ads_to_scraped_data, ads, new_url_id)
+                            print(f"[NEPREMICNINE ADD_URL] Saved {saved} properties to ScrapedData")
                 
                 await sync_msg.edit_text(
                     "✅ <b>Iskanje uspešno dodano!</b>\n\n"

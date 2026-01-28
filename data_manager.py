@@ -64,14 +64,19 @@ class DataManager():
         
         return result
 
-    def format_telegram_message(self, oglas):
+def format_telegram_message(self, oglas):
+        """
+        Universal message formatter for all sources: Avtonet, Bolha, Nepremičnine.
+        Automatically detects and displays relevant fields based on what's available.
+        """
         from datetime import datetime
         import html
         
-        # --- EXTRACT FIELDS ---
+        # --- EXTRACT CORE FIELDS ---
+        # Title (works for all sources)
         ime = html.escape(str(oglas.get('ime_avta') or oglas.get('title', 'Neznano')))
         
-        # Cena
+        # Price (works for all sources)
         raw_cena = oglas.get('cena') or oglas.get('price')
         if not raw_cena:
             raw_cena = 'Po dogovoru'
@@ -79,25 +84,38 @@ class DataManager():
         if any(char.isdigit() for char in cena) and '€' not in cena:
             cena += " €"
         
-        # All other fields
+        # Link (works for all sources)
+        link = oglas.get('link', 'https://www.avto.net')
+        
+        # --- EXTRACT SOURCE-SPECIFIC FIELDS ---
+        # Avtonet fields (cars)
         leto = oglas.get('leto_1_reg')
         km = oglas.get('prevozenih')
         gorivo = oglas.get('gorivo')
         menjalnik = oglas.get('menjalnik')
         motor = oglas.get('motor')
-        lokacija = oglas.get('lokacija')
-        published_date_raw = oglas.get('published_date')
-        link = oglas.get('link', 'https://www.avto.net')
         
-        # Format km
+        # Bolha fields (items)
+        published_date_raw = oglas.get('published_date')
+        
+        # Nepremičnine fields (properties)
+        m2 = oglas.get('m2')
+        land_m2 = oglas.get('land_m2')
+        prop_type = oglas.get('type')
+        year = oglas.get('year')
+        
+        # Universal fields (all sources)
+        lokacija = oglas.get('lokacija') or oglas.get('location')
+        
+        # --- FORMAT FIELDS ---
+        # Format kilometers
+        km_str = None
         if km and str(km) not in ['None', 'null', 'Neznano']:
             km_str = str(km).strip()
             if 'km' not in km_str.lower():
                 km_str += " km"
-        else:
-            km_str = None
         
-        # Format published date
+        # Format published date (Bolha)
         published_date = None
         if published_date_raw:
             try:
@@ -107,37 +125,81 @@ class DataManager():
                 published_date = published_date_raw
         
         # --- BUILD MESSAGE ---
+        source_name = "AVTO.NET"  # Default
+        source_emoji = "🚗"
+
+        content_id = str(oglas.get('content_id', ''))
+        if content_id.startswith('np_'):
+            source_name = "NEPREMIČNINE.NET"
+            source_emoji = "🏠"
+        elif content_id.startswith('bo_'):
+            source_name = "BOLHA.COM"
+            source_emoji = "🛒"
+        elif link and 'bolha.com' in link.lower():
+            source_name = "BOLHA.COM"
+            source_emoji = "🛒"
+        elif link and 'nepremicnine.net' in link.lower():
+            source_name = "NEPREMIČNINE.NET"
+            source_emoji = "🏠"
+
         msg = (
-            f"<b>NOV OGLAS NAJDEN!</b>\n"
+            f"{source_emoji} <b>NOV OGLAS | {source_name}</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"<b>{ime}</b>\n\n"
-            f"Cena: <b>{cena}</b>\n"
+            f"💰 Cena: <b>{cena}</b>\n"
         )
+        # --- SMART FIELD DISPLAY ---
+        # Group 1: Car-specific fields (Avtonet)
+        car_fields = []
+        if leto and str(leto) not in ['None', 'null', 'Neznano', '']:
+            car_fields.append(('Letnik', leto))
+        if km_str:
+            car_fields.append(('Prevozenih', km_str))
+        if gorivo and str(gorivo) not in ['None', 'null', 'Neznano', '']:
+            car_fields.append(('Gorivo', gorivo))
+        if menjalnik and str(menjalnik) not in ['None', 'null', 'Neznano', '']:
+            car_fields.append(('Menjalnik', menjalnik))
+        if motor and str(motor) not in ['None', 'null', 'Neznano', '']:
+            car_fields.append(('🔧 Motor', motor))
         
-        # Add all available fields (smart filtering - only show non-empty)
-        fields = [
-            ('Letnik', leto),
-            ('Prevozenih', km_str),
-            ('Gorivo', gorivo),
-            ('Menjalnik', menjalnik),
-            ('Motor', motor),
-            ('Lokacija', lokacija),
-            ('Objavljeno', published_date),
-        ]
-        
-        # Only show fields that have actual values
-        shown_any = False
-        for label, value in fields:
-            if value and str(value) not in ['None', 'null', 'Neznano', '']:
-                msg += f"\n{label}: <b>{html.escape(str(value))}</b>"
-                shown_any = True
-        
-        if shown_any:
+        if car_fields:
             msg += "\n"
+            for label, value in car_fields:
+                msg += f"{label}: <b>{html.escape(str(value))}</b>\n"
         
+        # Group 2: Property-specific fields (Nepremičnine) - MODIFIED VIA STEP 5
+        property_fields = []
+        if prop_type and str(prop_type).strip() not in ['None', 'null', 'Neznano', '']:
+            property_fields.append(('Tip', prop_type))
+        if m2 and str(m2).strip() not in ['None', 'null', 'Neznano', '']:
+            property_fields.append(('Velikost', m2))
+        if year and str(year).strip() not in ['None', 'null', 'Neznano', '']:
+            property_fields.append(('Leto', year))
+        if land_m2 and str(land_m2).strip() not in ['None', 'null', 'Neznano', '']:
+            property_fields.append(('Zemljišče', land_m2))
+        
+        if property_fields:
+            msg += "\n"
+            for label, value in property_fields:
+                msg += f"{label}: <b>{html.escape(str(value))}</b>\n"
+        
+        # Group 3: Universal fields (all sources)
+        universal_fields = []
+        if lokacija and str(lokacija) not in ['None', 'null', 'Neznano', '']:
+            universal_fields.append(('Lokacija', lokacija))
+        if published_date and str(published_date) not in ['None', 'null', 'Neznano', '']:
+            universal_fields.append(('Objavljeno', published_date))
+        
+        if universal_fields:
+            msg += "\n"
+            for label, value in universal_fields:
+                msg += f"{label}: <b>{html.escape(str(value))}</b>\n"
+        
+        # --- FOOTER ---
         msg += f"\n🔗 <a href='{link}'>KLIKNI ZA OGLED OGLASA</a>"
+        
         return msg
-    
+        
     
 
 
