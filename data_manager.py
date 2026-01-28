@@ -160,7 +160,7 @@ class DataManager():
         if menjalnik and str(menjalnik) not in ['None', 'null', 'Neznano', '']:
             car_fields.append(('Menjalnik', menjalnik))
         if motor and str(motor) not in ['None', 'null', 'Neznano', '']:
-            car_fields.append(('🔧 Motor', motor))
+            car_fields.append(('Motor', motor))
         
         if car_fields:
             msg += "\n"
