@@ -38,7 +38,7 @@ class DataManager():
             AND sa.content_id = s.content_id
         )
         ORDER BY s.created_at DESC
-    """
+        """
         
         params = filter_url_ids
         rows = c.execute(query, params).fetchall()
@@ -126,21 +126,21 @@ class DataManager():
         
         # --- BUILD MESSAGE ---
         source_name = "AVTO.NET"  # Default
-        source_emoji = "🚗"
+        source_emoji = ""
 
         content_id = str(oglas.get('content_id', ''))
         if content_id.startswith('np_'):
             source_name = "NEPREMIČNINE.NET"
-            source_emoji = "🏠"
+            source_emoji = ""
         elif content_id.startswith('bo_'):
             source_name = "BOLHA.COM"
-            source_emoji = "🛒"
+            source_emoji = ""
         elif link and 'bolha.com' in link.lower():
             source_name = "BOLHA.COM"
-            source_emoji = "🛒"
+            source_emoji = ""
         elif link and 'nepremicnine.net' in link.lower():
             source_name = "NEPREMIČNINE.NET"
-            source_emoji = "🏠"
+            source_emoji = ""
 
         msg = (
             f"{source_emoji} <b>NOV OGLAS | {source_name}</b>\n"
