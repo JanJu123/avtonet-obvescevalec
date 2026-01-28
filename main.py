@@ -375,3 +375,56 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# https://www.nepremicnine.net/oglasi-prodaja/ljubljana-mesto/stanovanje/cena-do-1000000-eur/?s=16
+#! Dodati je treba da je vedno najnovejši najprej
+
+
+
+# POPRAVI:
+# Jan Jurhar, [28. 01. 2026 22:09]
+# /add_url https://www.nepremicnine.net/oglasi-prodaja/ljubljana-mesto/stanovanje/cena-do-10000000-eur/?s=16
+
+# MarketPulse, [28. 01. 2026 22:09]
+# ✅ Najdeno 1 nepremičnin...
+
+# MarketPulse, [28. 01. 2026 22:09]
+# ✅ Iskanje uspešno dodano!
+
+# Sistem si je zapomnil trenutno ponudbo. Obvestim te takoj, ko se pojavi kakšen nov oglas! 🚀
+
+# Jan Jurhar, [28. 01. 2026 22:09]
+# /list
+
+# MarketPulse, [28. 01. 2026 22:09]
+# 📋 TVOJA ISKANJA
+# ━━━━━━━━━━━━━━━━━━
+
+# ✅ ID: 91 - Odpri iskanje na Bolha.com (https://www.bolha.com/racunalnistvo)
+# ──────────────────
+# ✅ ID: 92 - Odpri iskanje na Avto.net (https://www.avto.net/Ads/results.asp?cenaMin=0&cenaMax=999999&letnikMin=0&letnikMax=2090&bencin=0&starost2=999&ccmMin=0&ccmMax=99999&kmMin=0&kmMax=9999999&kwMin=0&kwMax=999&motortakt=0&motorvalji=0&lokacija=0&EQ1=1000000000&EQ2=1000000000&EQ3=1000000000&EQ4=100000000&EQ5=1000000000&EQ6=1000000000&EQ7=1110100120&EQ8=101000000&EQ9=100000002&EQ10=100000000&KAT=1060000000&kategorija=61000&zaloga=10&presort=3&tipsort=DESC&subSORT=3&subTIPSORT=DESC&stran=1)
+# ──────────────────
+# ✅ ID: 93 - Odpri iskanje na Avto.net (https://www.avto.net/Ads/results.asp?znamka=VW&cenaMin=0&cenaMax=999999&letnikMin=0&letnikMax=2090&bencin=0&starost2=999&oblika=0&ccmMin=0&ccmMax=99999&mocMin=0&mocMax=999999&kmMin=0&kmMax=9999999&kwMin=0&kwMax=999&motortakt=0&motorvalji=0&lokacija=0&sirina=0&dolzinaMIN=0&dolzinaMAX=100&nosilnostMIN=0&nosilnostMAX=999999&sedezevMIN=0&sedezevMAX=9&presek=0&premer=0&col=0&vijakov=0&EToznaka=0&doseg=0&BkType=0&BkOkvir=0&BkOkvirType=0&Bk4=0&EQ1=1000000000&EQ2=1000000000&EQ3=1000000000&EQ4=1000000000&EQ5=1000000000&EQ6=1000000000&EQ7=1110100120&EQ8=100000000&EQ9=1000000020&EQ10=10000000&KAT=1010000000&akcija=0&broker=0&prikazkategorije=0&kategorija=0&ONLvid=0&ONLnak=0&zaloga=10&arhiv=0&presort=3&tipsort=DESC&subSORT=3&subTIPSORT=DESC&stran=1)
+# ──────────────────
+# ✅ ID: 94 - Odpri iskanje na Avto.net (https://www.avto.net/Ads/results.asp?znamka=BMW&cenaMin=0&cenaMax=999999&letnikMin=0&letnikMax=2090&bencin=0&starost2=999&oblika=0&ccmMin=0&ccmMax=99999&mocMin=0&mocMax=999999&kmMin=0&kmMax=9999999&kwMin=0&kwMax=999&motortakt=0&motorvalji=0&lokacija=0&sirina=0&dolzinaMIN=0&dolzinaMAX=100&nosilnostMIN=0&nosilnostMAX=999999&sedezevMIN=0&sedezevMAX=9&presek=0&premer=0&col=0&vijakov=0&EToznaka=0&doseg=0&BkType=0&BkOkvir=0&BkOkvirType=0&Bk4=0&EQ1=1000000000&EQ2=1000000000&EQ3=1000000000&EQ4=1000000000&EQ5=1000000000&EQ6=1000000000&EQ7=1110100120&EQ8=100000000&EQ9=1000000020&EQ10=10000000&KAT=1010000000&akcija=0&broker=0&prikazkategorije=0&kategorija=0&ONLvid=0&ONLnak=0&zaloga=10&arhiv=0&presort=3&tipsort=DESC&subSORT=3&subTIPSORT=DESC&stran=1)
+# ──────────────────
+# ✅ ID: 95 - Odpri iskanje na Avto.net (https://www.avto.net/Ads/results.asp?znamka=Audi&cenaMin=0&cenaMax=999999&letnikMin=0&letnikMax=2090&bencin=0&starost2=999&oblika=0&ccmMin=0&ccmMax=99999&mocMin=0&mocMax=999999&kmMin=0&kmMax=9999999&kwMin=0&kwMax=999&motortakt=0&motorvalji=0&lokacija=0&sirina=0&dolzinaMIN=0&dolzinaMAX=100&nosilnostMIN=0&nosilnostMAX=999999&sedezevMIN=0&sedezevMAX=9&presek=0&premer=0&col=0&vijakov=0&EToznaka=0&doseg=0&BkType=0&BkOkvir=0&BkOkvirType=0&Bk4=0&EQ1=1000000000&EQ2=1000000000&EQ3=1000000000&EQ4=1000000000&EQ5=1000000000&EQ6=1000000000&EQ7=1110100120&EQ8=100000000&EQ9=1000000020&EQ10=10000000&KAT=1010000000&akcija=0&broker=0&prikazkategorije=0&kategorija=0&ONLvid=0&ONLnak=0&zaloga=10&arhiv=0&presort=3&tipsort=DESC&subSORT=3&subTIPSORT=DESC&stran=1)
+# ──────────────────
+# ✅ ID: 96 - Odpri iskanje na Avto.net (https://www.avto.net/Ads/results.asp?znamka=MercedesBenz&cenaMin=0&cenaMax=999999&letnikMin=0&letnikMax=2090&bencin=0&starost2=999&oblika=0&ccmMin=0&ccmMax=99999&mocMin=0&mocMax=999999&kmMin=0&kmMax=9999999&kwMin=0&kwMax=999&motortakt=0&motorvalji=0&lokacija=0&sirina=0&dolzinaMIN=0&dolzinaMAX=100&nosilnostMIN=0&nosilnostMAX=999999&sedezevMIN=0&sedezevMAX=9&presek=0&premer=0&col=0&vijakov=0&EToznaka=0&doseg=0&BkType=0&BkOkvir=0&BkOkvirType=0&Bk4=0&EQ1=1000000000&EQ2=1000000000&EQ3=1000000000&EQ4=1000000000&EQ5=1000000000&EQ6=1000000000&EQ7=1110100120&EQ8=100000000&EQ9=1000000020&EQ10=10000000&KAT=1010000000&akcija=0&broker=0&prikazkategorije=0&kategorija=0&ONLvid=0&ONLnak=0&zaloga=10&arhiv=0&presort=3&tipsort=DESC&subSORT=3&subTIPSORT=DESC&stran=1)
+# ──────────────────
+# ✅ ID: 97 - Odpri iskanje na Avto.net (https://www.nepremicnine.net/oglasi-prodaja/ljubljana-mesto/stanovanje/cena-do-10000000-eur/)
+# ──────────────────
+
+# 📊 Zasedenost: 7 / 15 mest
+# 📦 Paket: ULTRA (🟢 Aktiven)
+
+
+# 🗑️ ODSTRANITEV ISKANJA:
+# Za izbris uporabi ukaz /remove_url 91
+
+#! Problem je da ne piše Neprimicnine.net 
+
+
+
+
+
