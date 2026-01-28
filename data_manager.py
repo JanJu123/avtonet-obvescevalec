@@ -64,7 +64,7 @@ class DataManager():
         
         return result
 
-def format_telegram_message(self, oglas):
+    def format_telegram_message(self, oglas):
         """
         Universal message formatter for all sources: Avtonet, Bolha, Nepremičnine.
         Automatically detects and displays relevant fields based on what's available.
