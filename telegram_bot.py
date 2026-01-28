@@ -326,6 +326,9 @@ async def list_command(update: telegram.Update, context: telegram.ext.ContextTyp
         # Determine source based on URL
         if "bolha.com" in u['url'].lower():
             source = "Bolha.com"
+        elif "nepremicnine.net" in u['url'].lower():
+            source = "Nepremicnine.net"
+
         else:
             source = "Avto.net"
         
